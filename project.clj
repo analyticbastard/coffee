@@ -33,7 +33,9 @@
   :ring {:handler server.handler/app}
 
   :profiles {:dev {:dependencies [[javax.servlet/servlet-api "2.5"]
-                                  [ring/ring-mock "0.3.0"]]
+                                  [ring/ring-mock "0.3.0"]
+                                  [figwheel-sidecar "0.5.0-1"]
+                                  ]
                    :source-paths ["src/dev/clj"]
                    }
 
