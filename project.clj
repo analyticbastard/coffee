@@ -12,6 +12,7 @@
                  [org.clojure/core.async "0.2.374"
                   :exclusions [org.clojure/tools.reader]]
                  [reagent "0.5.1"]
+                 [reagent-utils "0.1.7"]
                  [re-frame "0.7.0-alpha-2"]
                  [secretary "1.2.3"]
                  ]
@@ -43,11 +44,11 @@
                                          :source-paths ["src/main/cljs"]
 
                                          ;; If no code is to be run, set :figwheel true for continued automagical reloading
-                                         :figwheel {:on-jsload "client.core/on-js-reload"}
+                                         :figwheel {:on-jsload "coffee-client.core/on-js-reload"}
 
-                                         :compiler {:main client.core
+                                         :compiler {:main coffee-client.core
                                                     :asset-path "js/compiled/out"
-                                                    :output-to "src/main/resources/public/js/compiled/client.js"
+                                                    :output-to "src/main/resources/public/js/compiled/coffee-client.js"
                                                     :output-dir "src/main/resources/public/js/compiled/out"
                                                     :source-map-timestamp true}}
                                         ;; This next build is an compressed minified build for
@@ -55,13 +56,13 @@
                                         ;; lein cljsbuild once min
                                         {:id "min"
                                          :source-paths ["src/main/cljs"]
-                                         :compiler {:output-to "src/main/resources/public/js/compiled/client.js"
-                                                    :main client.core
+                                         :compiler {:output-to "src/main/resources/public/js/compiled/coffee-client.js"
+                                                    :main coffee-client.core
                                                     :optimizations :advanced
                                                     :pretty-print false}}]}
 
                    :figwheel {;; :http-server-root "public" ;; default and assumes "resources"
-                              :server-port 3448
+                              :server-port 3449
                               ;; :server-ip "127.0.0.1"
 
                               :css-dirs ["src/main/resources/public/css"] ;; watch and update CSS

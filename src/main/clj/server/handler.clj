@@ -8,6 +8,8 @@
   (:import (java.util UUID)))
 
 
+(def app-state (atom {:session {:organizer nil :participants []}}))
+
 (defn respond-to-tapped-ch [ws-channel]
   (fn [message]
     (println "multicasting message to user" message)
@@ -24,14 +26,17 @@
 
 (defn ws-handler [{:keys [ws-channel] :as req} {:keys [chat-ch chat-mult]}]
   (let [tapped-ch (a/chan)
-        user-id (UUID/randomUUID)]
+        user-id (UUID/randomUUID)
+        user-map (atom {})]
     (a/tap chat-mult tapped-ch)
     (println (format "Opened connection from %s, user-id %s."
                      (:remote-addr req)
                      user-id))
     (go
-      (a/>! chat-ch {:type :user-joined
-                     :user-id user-id})
+      (when-let [organizer (-> @app-state :session :organizer)]
+        (a/>! chat-ch {:type    :user-joined
+                       :message {:action :organize :value organizer}
+                       :user-id user-id}))
       (loop []
         (a/alt!
           tapped-ch ([message] (if message
@@ -43,8 +48,16 @@
                                    (a/close! ws-channel))))
 
           ws-channel ([ws-message] (if ws-message
-                                     (do
-                                       ((respond-server-channel chat-ch user-id) ws-message)
+                                     (let [message (:message ws-message)]
+                                       (case (:action message)
+                                         :login (let [user-name (:user-name message)]
+                                                  (println user-name)
+                                                  (swap! app-state update-in [:session :participants] conj user-name)
+                                                  (swap! user-map assoc user-id user-name))
+                                         :organize (let [user-name (@user-map user-id)]
+                                                     (println "organizer" user-name)
+                                                     (swap! app-state assoc-in [:session :organizer] user-name)
+                                                     ((respond-server-channel chat-ch user-id) {:message {:action :organize :value user-name}})))
                                        (recur))
                                      (do
                                        (println "Exiting")
