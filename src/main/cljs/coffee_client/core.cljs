@@ -4,9 +4,13 @@
             [chord.client :refer [ws-ch]]
             [cljs.core.async :refer [<! >! put! close! chan]]
             [re-frame.core :refer [register-handler path register-sub dispatch dispatch-sync subscribe]]
+            [goog.events :as events]
+            [secretary.core :as secretary :refer-macros [defroute]]
             )
   (:require-macros [cljs.core.async.macros :refer [go go-loop]]
                    [reagent.ratom :refer [reaction]])
+  (:import goog.History
+           goog.history.EventType)
   )
 
 (enable-console-print!)
@@ -15,28 +19,44 @@
 
 ;; define your app data so that it doesn't get over-written on reload
 
-(register-handler :organize (fn [db [_ who-organizes]] (println "handler" who-organizes) (assoc db :organize who-organizes)))
+(defonce app (js/document.getElementById "app"))
+
+(register-handler :uuid (fn [db [_ uuid]]
+                          (println "handler" uuid)
+                          (secretary/dispatch! "/organize")
+                          (assoc db :uuid uuid)
+                          ))
+
+(register-handler :organize
+                  (fn [db [_ who-organizes]]
+                    (println "organize" who-organizes)
+                    (when who-organizes
+                      (secretary/dispatch! "/dashboard")
+                      (assoc db :organize who-organizes))))
 
 (register-sub :organize
               (fn [db _] (reaction (:organize @db))))
+
+(register-sub :uuid
+              (println "sub")
+              (fn [db _] (reaction (:uuid @db))))
 
 (defn receive! [server-ch]
   (go-loop []
            (let [{:keys [message error] :as msg} (<! server-ch)
                  message (:message message)]
-             (println message)
              (when msg
                (let [action (:action message)
                      value (:value message)]
                  (println "action" action value)
-                 (if (contains? #{:organize} action)
+                 (if (contains? #{:organize :uuid} action)
                    (dispatch [action value])))
                (recur)))
            )
   )
 
 (defn send! [sever-ch msg]
-  (go-loop [] (>! sever-ch msg)))
+  (go [] (>! sever-ch msg)))
 
 
 (defn row-component [label & body]
@@ -52,45 +72,41 @@
             :onChange #(reset! doc (-> % .-target .-value))}]])
 
 
-(defn coffee-select-component [server-ch]
-  [:div [:h1 "Select your cofee"]
-   (when server-ch
-     [:div
-      [:button {:on-click #(send! server-ch {:action :organize})
-                }
-       "Send message to server!"]])])
-
 (defn error-component [error]
   [:div
    "Couldn't connect to websocket: "
    (pr-str error)])
 
-(defn coffee-user-component [server-ch organize-info]
+(defn coffee-user-component [server-ch]
   (fn []
-    [:div "Organized by" (:organized-by organize-info)]
-    [:div [:h1 "Your coffee"]
-     [coffee-select-component server-ch]
-     ])
+    [:div [:h1 "Select your coffee"]
+     [:div (str "Organized by " @(subscribe [:organize]))]
+     (when server-ch
+       [:div
+        [:button {:on-click #(send! server-ch {:action :organize})
+                  }
+         "Send message to server!"]])])
   )
 
-(defn organize-component [server-ch]
+(defn organize-component [server-data]
   [:div
-   [:button {:on-click #(send! server-ch {:action :organize})
+   [:button {:on-click #(send! @(:server-ch server-data) {:action :organize})
              }
     "Send message to server!"]]
   )
 
-(defn main-dashboard-component [server-ch]
-  (let [organize-info (subscribe [:organize])]
+(defn main-dashboard-component [server-data]
+  (let [server-ch @(:server-ch server-data)
+        organize-info (subscribe [:organize])]
     (fn []
-      (println "info" organize-info)
+      (println "info" @organize-info)
       (if @organize-info
         [coffee-user-component server-ch]
         [organize-component server-ch]
         ))
     ))
 
-(defn connect-to-server-and-put-component [user-name]
+(defn connect-to-server [user-name server-ch]
   (println "login as" user-name)
   (go (let [{:keys [ws-channel error]} (<! (ws-ch "ws://localhost:3000/ws" {:format :transit-json}))]
         (if (or error (nil? ws-channel))
@@ -98,31 +114,50 @@
           (do
             (receive! ws-channel)
             (send! ws-channel {:action :login :user-name user-name})
-            (r/render [(fn [] [main-dashboard-component ws-channel])] (.getElementById js/document "app"))))
+            (reset! server-ch ws-channel)
+            ))
         )))
 
-(defn login-page []
-  (let [user-name (atom nil)]
-    (fn []
-      [:div
-       [:div.page-header [:h1 "Sign In"]]
-       [text-input-component user-name :first-name "Name"]
-       [:button {:type     "submit"
-                 :class    "btn btn-default"
-                 :on-click #(connect-to-server-and-put-component @user-name)} "OK"]])))
+(defn login-page [server-data]
+  (let [user-login (:login server-data)
+        server-ch (:server-ch server-data)]
+    [:div
+     [:div.page-header [:h1 "Sign In"]]
+     [text-input-component user-login :first-name "Name"]
+     [:button {:type     "submit"
+               :class    "btn btn-default"
+               :on-click #(connect-to-server @user-login server-ch)} "OK"]]))
+
+
+(defonce reload-data (atom {:last-page "/"}))
+
+(def defroutes
+  (let [server-data {:server-ch (atom nil)
+                     :login (atom nil)
+                     :uuid (atom nil)}]
+    (defroute login "/" []
+              (do
+                (swap! reload-data assoc :last-page "/")
+                (r/render [login-page server-data] app)))
+    (defroute organize "/organize" []
+              (do
+                (swap! reload-data assoc :last-page "/organize")
+                (r/render [organize-component server-data] app)))
+    (defroute dashboard "/dashboard" []
+              (do
+                (swap! reload-data assoc :last-page "/dashboard")
+                (r/render [main-dashboard-component server-data] app)))))
+
+#_(let [h (History.)]
+  (events/listen h EventType.NAVIGATE #(secretary/dispatch! (.-token %)))
+  (doto h
+    (.setEnabled true)))
+
 
 (defn on-js-reload []
-  ;; optionally touch your app-state to force rerendering depending on
-  ;; your application
-  ;; (swap! app-state update-in [:__figwheel_counter] inc)
+  ;; optionally touch your app-state to force rerendering depending on your application
+  (println "reload!" (:last-page @reload-data))
+  (secretary/dispatch! (:last-page @reload-data))
   )
 
-(defn ^:export run
-  []
-  (println "XX")
-  (dispatch-sync [:initialize])
-  (r/render [login-page]
-                  (js/document.getElementById "app")))
-
-
-(defonce run-var (run))
+(defonce once-show-page (secretary/dispatch! "/"))

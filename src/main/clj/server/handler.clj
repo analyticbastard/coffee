@@ -33,6 +33,9 @@
                      (:remote-addr req)
                      user-id))
     (go
+      (a/>! ws-channel {:type    :user-joined
+                        :message {:action :uuid :value user-id}
+                        :user-id user-id})
       (when-let [organizer (-> @app-state :session :organizer)]
         (a/>! chat-ch {:type    :user-joined
                        :message {:action :organize :value organizer}
@@ -49,6 +52,7 @@
 
           ws-channel ([ws-message] (if ws-message
                                      (let [message (:message ws-message)]
+                                       (println message)
                                        (case (:action message)
                                          :login (let [user-name (:user-name message)]
                                                   (println user-name)
