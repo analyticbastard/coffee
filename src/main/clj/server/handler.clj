@@ -10,17 +10,29 @@
 
 (def app-state (atom {:session {:organizer nil :participants []}}))
 
-(defn respond-to-tapped-ch [ws-channel]
-  (fn [message]
-    (println "multicasting message to user" message)
-    (go (>! ws-channel message))))
+(defn respond-to-tapped-ch [ws-channel message]
+  (println "multicasting message to user" message)
+  (go (>! ws-channel message)))
 
-(defn respond-server-channel [chat-ch user-id]
-  (fn [ws-message]
-    (go (>! chat-ch {:type    :message
-                     :message (:message ws-message)
-                     :user-id user-id}))
-    (println "received from client" (-> ws-message :message :text))))
+(defn respond-server-channel [chat-ch user-id user-map ws-message]
+  (let [message (:message ws-message)
+        login-fn #(let [user-name (:user-name message)]
+                   (println user-name)
+                   (swap! app-state update-in [:session :participants] conj user-name)
+                   (swap! user-map assoc user-id user-name))
+        organize-fn #(let [user-name (@user-map user-id)]
+                      (println "organizer" user-name)
+                      (swap! app-state assoc-in [:session :organizer] user-name)
+                      (go (>! chat-ch {:type    :message
+                                       :message {:action :organize :value user-name}
+                                       :user-id user-id}))
+                      )
+        ]
+    (case (:action message)
+      :login (login-fn)
+      :organize (organize-fn))
+    (println "received from client" (-> message :message :text))
+    ))
 
 
 
@@ -44,25 +56,15 @@
         (a/alt!
           tapped-ch ([message] (if message
                                  (do
-                                   ((respond-to-tapped-ch ws-channel) message)
+                                   (respond-to-tapped-ch ws-channel message)
                                    (recur))
                                  (do
                                    (println "NO msg")
                                    (a/close! ws-channel))))
 
           ws-channel ([ws-message] (if ws-message
-                                     (let [message (:message ws-message)]
-                                       (println message)
-                                       (case (:action message)
-                                         :login (let [user-name (:user-name message)]
-                                                  (println user-name)
-                                                  (swap! app-state update-in [:session :participants] conj user-name)
-                                                  (swap! user-map assoc user-id user-name))
-                                         :organize (let [user-name (@user-map user-id)]
-                                                     (println "organizer" user-name)
-                                                     (swap! app-state assoc-in [:session :organizer] user-name)
-                                                     ((respond-server-channel chat-ch user-id) {:message {:action :organize :value user-name}})))
-                                       (recur))
+                                     (do (respond-server-channel chat-ch user-id user-map ws-message)
+                                         (recur))
                                      (do
                                        (println "Exiting")
                                        (a/untap chat-mult tapped-ch)
