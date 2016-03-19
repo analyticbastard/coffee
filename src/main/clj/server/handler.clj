@@ -10,7 +10,7 @@
   (:import (java.util UUID)))
 
 
-(def app-state (atom {:session {:organizer nil :participants []}}))
+(def app-state (atom {:session {:organizer nil :participants #{}}}))
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
