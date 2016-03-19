@@ -10,7 +10,7 @@
   (:import (java.util UUID)))
 
 
-(def app-state (atom {:session {:organizer nil :participants #{}}}))
+(def app-state (atom {:session {:organizer nil :participants #{} :choices {}}}))
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
@@ -20,6 +20,11 @@
   {:action :organize
    :value  {:organizer    organizer-name
             :coffee-types types/coffee-types}}
+  )
+
+(defn build-choose-msg [choices]
+  {:action :choose
+   :value choices}
   )
 
 (defn respond-server-channel [chat-ch user-id user-map ws-message]
@@ -34,10 +39,15 @@
                       (swap! app-state assoc-in [:session :organizer] organizer-name)
                       (go (>! chat-ch (build-organize-msg organizer-name)))
                       )
+        choose-fn #(let [user-name (@user-map user-id)]
+                    (swap! app-state assoc-in [:session :choices user-name] %)
+                    (go (>! chat-ch (build-choose-msg {user-name %}))))
         ]
     (case (:action message)
       :login (login-fn)
-      :organize (organize-fn))
+      :organize (organize-fn)
+      :choose (choose-fn (:value message))
+      )
     (println "received from client" message)
     ))
 
@@ -53,6 +63,7 @@
                      user-id))
     (go
       (a/>! ws-channel {:action :uuid :value user-id})
+      (println (-> @app-state :session :organizer))
       (when-let [organizer (-> @app-state :session :organizer)]
         (a/>! chat-ch (build-organize-msg organizer)))
       (loop []

@@ -23,17 +23,24 @@
 (defonce app (js/document.getElementById "app"))
 
 (register-handler :uuid (fn [db [_ uuid]]
-                          (println "handler" uuid)
                           (secretary/dispatch! "/organize")
                           (assoc db :uuid uuid)
                           ))
 
 (register-handler :organize
                   (fn [db [_ organization-info]]
-                    (println "organize" organization-info)
                     (when organization-info
                       (secretary/dispatch! "/dashboard")
                       (merge db organization-info))))
+
+(register-handler :choose
+                  (fn [db [_ choice]]
+                    (println choice)
+                    (update-in db [:choice] merge choice))
+                  )
+
+(register-sub :choose
+              (fn [db _] (reaction (:choice @db))))
 
 (register-sub :organize
               (fn [db _] (reaction (:organizer @db))))
@@ -42,70 +49,79 @@
               (fn [db _] (reaction (:coffee-types @db))))
 
 (register-sub :uuid
-              (println "sub")
               (fn [db _] (reaction (:uuid @db))))
 
 (defn receive! [server-ch]
-  (go-loop []
-           (let [{:keys [message error] :as msg} (<! server-ch)]
-             (when msg
-               (let [action (:action message)
-                     value (:value message)]
-                 (println "action" action value)
-                 (if (contains? #{:organize :uuid} action)
-                   (dispatch [action value])))
-               (recur)))
-           )
+  (let [dispatcher-fn #(let [action (:action %)
+                             value  (:value %)]
+                        (println "action" action value (= :choose action))
+                        (when (contains? #{:organize :uuid :choose} action)
+                          (println action value)
+                          (dispatch [action value])))]
+    (go-loop []
+             (let [{:keys [message _] :as msg} (<! server-ch)]
+               (when msg
+                 (dispatcher-fn message)
+                 (recur)))
+             ))
   )
 
 (defn send! [sever-ch msg]
   (go [] (>! sever-ch msg)))
-
-
-(defn row-component [label & body]
-  [:div.row
-   [:div.col-md-2 [:span label]]
-   [:div.col-md-3 body]])
-
-(defn text-input-component [doc id label]
-  [row-component label
-   [:input {:type "text"
-            :class "form-control"
-            ;:value (id @doc)
-            :onChange #(reset! doc (-> % .-target .-value))}]])
-
 
 (defn error-component [error]
   [:div
    "Couldn't connect to websocket: "
    (pr-str error)])
 
+(defn coffee-button-component [server-ch coffee-name coffee-img]
+  [:li.btn.btn-default {:on-click #(send! server-ch {:action :choose :value coffee-name})}
+   [:img {:src   coffee-img
+          :style {:float "left"}
+          :width "15px"}]
+   [:span coffee-name]
+   (println (->> @(subscribe [:choose]) vals))
+   [:span (str "x " (->> @(subscribe [:choose])
+                         vals
+                         (filter #(= coffee-name %))
+                         count))]
+   ])
+
+(defn coffee-types [server-ch]
+  [:ul.btn-group-vertical
+   (for [type @(subscribe [:coffee-types])]
+     [coffee-button-component server-ch (:name type) (:img type)])])
+
 (defn coffee-user-component [server-ch]
   (fn []
-    [:div [:h1 "Select your coffee"]
-     [:div (str "Organized by " @(subscribe [:organize]))]
-     (when server-ch
-       [:ul
-        (for [type @(subscribe [:coffee-types])]
-          [:li #_{:on-click #(send! server-ch {:action :organize})}
-           [:img {:src (:img type)
-                  :width "20px"}]
-           (:name type)
-           ])])])
-  )
+    [:div
+     [:nav.navbar.navbar-default
+      [:div.container-fluid
+       [:p.navbar-text
+        (str "Organized by " @(subscribe [:organize]))
+        ]
+       [:div.nav.navbar-nav.navbar-right
+        [:button.navbar-btn.glyphicon.glyphicon-shopping-cart]]]]
+     [:div.panel.panel-default
+      [:div.panel-heading [:h3.panel-title "Select your coffee"]]
+      [:div.panel-body
+       (when server-ch
+         [coffee-types server-ch])]]
+     ]
+    ))
 
 (defn organize-component [server-data]
   [:div
+   [:h3 "No session active"]
    [:button {:on-click #(send! @(:server-ch server-data) {:action :organize})
              }
-    "Send message to server!"]]
+    "Organize coffee session"]]
   )
 
 (defn main-dashboard-component [server-data]
   (let [server-ch @(:server-ch server-data)
         organize-info (subscribe [:organize])]
     (fn []
-      (println "info" @organize-info)
       (if @organize-info
         [coffee-user-component server-ch]
         [organize-component server-ch]
@@ -126,18 +142,28 @@
 
 (defn login-page [server-data]
   (let [user-login (:login server-data)
-        server-ch (:server-ch server-data)]
-    [:div
-     [:div.page-header [:h1 "Sign In"]]
-     [text-input-component user-login :first-name "Name"]
-     [:button {:type     "submit"
-               :class    "btn btn-default"
-               :on-click #(connect-to-server @user-login server-ch)} "OK"]]))
+        server-ch (:server-ch server-data)
+        text-input-component (fn []
+                               [:input.form-control
+                                {:type "text"
+                                 :placeholder "Name"
+                                 :class "form-control"
+                                 ;:value (id @doc)
+                                 :onChange #(reset! user-login (-> % .-target .-value))}])
+        ]
+    [:div.modal-dialog
+     [:div.loginmodal-container
+      [:div.form-sign-in
+       [:h2.form-sign-in-heading "Sign In"]
+       [text-input-component]
+       [:input.btn.btn-lg.btn-primary.btn-block
+        {:type     "submit"
+         :on-click #(connect-to-server @user-login server-ch)}]]]]))
 
 
 (defonce reload-data (atom {:last-page "/"}))
 
-(def defroutes
+(do
   (let [server-data {:server-ch (atom nil)
                      :login (atom nil)
                      :uuid (atom nil)}]
