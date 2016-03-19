@@ -4,7 +4,9 @@
             [ring.middleware.defaults :refer [wrap-defaults site-defaults]]
             [chord.http-kit :refer [with-channel]]
             [clojure.core.async :as async :refer [<! >! put! close! go]]
-            [clojure.core.async :as a])
+            [clojure.core.async :as a]
+            [ring.middleware.resource :as resource]
+            [server.types :as types])
   (:import (java.util UUID)))
 
 
@@ -14,24 +16,29 @@
   (println "multicasting message to user" message)
   (go (>! ws-channel message)))
 
+(defn build-organize-msg [organizer-name]
+  {:action :organize
+   :value  {:organizer    organizer-name
+            :coffee-types types/coffee-types}}
+  )
+
 (defn respond-server-channel [chat-ch user-id user-map ws-message]
-  (let [message (:message ws-message)
+  (println "ws-message" ws-message)
+  (let [message     (:message ws-message)
         login-fn #(let [user-name (:user-name message)]
                    (println user-name)
                    (swap! app-state update-in [:session :participants] conj user-name)
                    (swap! user-map assoc user-id user-name))
-        organize-fn #(let [user-name (@user-map user-id)]
-                      (println "organizer" user-name)
-                      (swap! app-state assoc-in [:session :organizer] user-name)
-                      (go (>! chat-ch {:type    :message
-                                       :message {:action :organize :value user-name}
-                                       :user-id user-id}))
+        organize-fn #(let [organizer-name (@user-map user-id)]
+                      (println "organizer" organizer-name)
+                      (swap! app-state assoc-in [:session :organizer] organizer-name)
+                      (go (>! chat-ch (build-organize-msg organizer-name)))
                       )
         ]
     (case (:action message)
       :login (login-fn)
       :organize (organize-fn))
-    (println "received from client" (-> message :message :text))
+    (println "received from client" message)
     ))
 
 
@@ -45,13 +52,9 @@
                      (:remote-addr req)
                      user-id))
     (go
-      (a/>! ws-channel {:type    :user-joined
-                        :message {:action :uuid :value user-id}
-                        :user-id user-id})
+      (a/>! ws-channel {:action :uuid :value user-id})
       (when-let [organizer (-> @app-state :session :organizer)]
-        (a/>! chat-ch {:type    :user-joined
-                       :message {:action :organize :value organizer}
-                       :user-id user-id}))
+        (a/>! chat-ch (build-organize-msg organizer)))
       (loop []
         (a/alt!
           tapped-ch ([message] (if message
@@ -82,10 +85,12 @@
         (a/close! chat-ch)))))
 
 (def app-routes
-  (with-chat-chs
-    (fn [chat-chs]
-      (compojure.core/routes
-        (GET "/ws" [] (chord.http-kit/wrap-websocket-handler #(ws-handler % chat-chs) {:format :transit-json}))
-        (GET "/" [] "Hello World")
-        (route/not-found "Not Found")))))
+  (resource/wrap-resource
+    (with-chat-chs
+      (fn [chat-chs]
+        (compojure.core/routes
+          (GET "/ws" [] (chord.http-kit/wrap-websocket-handler #(ws-handler % chat-chs) {:format :transit-json}))
+          (GET "/" [] "Hello World")
+          (route/not-found "Not Found"))))
+    "public"))
 

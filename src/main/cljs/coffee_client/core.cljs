@@ -13,6 +13,7 @@
            goog.history.EventType)
   )
 
+
 (enable-console-print!)
 
 (println "Edits to this text should show up in your developer console.")
@@ -28,14 +29,17 @@
                           ))
 
 (register-handler :organize
-                  (fn [db [_ who-organizes]]
-                    (println "organize" who-organizes)
-                    (when who-organizes
+                  (fn [db [_ organization-info]]
+                    (println "organize" organization-info)
+                    (when organization-info
                       (secretary/dispatch! "/dashboard")
-                      (assoc db :organize who-organizes))))
+                      (merge db organization-info))))
 
 (register-sub :organize
-              (fn [db _] (reaction (:organize @db))))
+              (fn [db _] (reaction (:organizer @db))))
+
+(register-sub :coffee-types
+              (fn [db _] (reaction (:coffee-types @db))))
 
 (register-sub :uuid
               (println "sub")
@@ -43,8 +47,7 @@
 
 (defn receive! [server-ch]
   (go-loop []
-           (let [{:keys [message error] :as msg} (<! server-ch)
-                 message (:message message)]
+           (let [{:keys [message error] :as msg} (<! server-ch)]
              (when msg
                (let [action (:action message)
                      value (:value message)]
@@ -82,10 +85,13 @@
     [:div [:h1 "Select your coffee"]
      [:div (str "Organized by " @(subscribe [:organize]))]
      (when server-ch
-       [:div
-        [:button {:on-click #(send! server-ch {:action :organize})
-                  }
-         "Send message to server!"]])])
+       [:ul
+        (for [type @(subscribe [:coffee-types])]
+          [:li #_{:on-click #(send! server-ch {:action :organize})}
+           [:img {:src (:img type)
+                  :width "20px"}]
+           (:name type)
+           ])])])
   )
 
 (defn organize-component [server-data]
