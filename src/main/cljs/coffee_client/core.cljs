@@ -74,25 +74,35 @@
    "Couldn't connect to websocket: "
    (pr-str error)])
 
-(defn coffee-button-component [server-ch coffee-name coffee-img]
-  [:li.btn.btn-default {:on-click #(send! server-ch {:action :choose :value coffee-name})}
-   [:img {:src   coffee-img
-          :style {:float "left"}
-          :width "15px"}]
-   [:span coffee-name]
-   (println (->> @(subscribe [:choose]) vals))
-   [:span (str "x " (->> @(subscribe [:choose])
-                         vals
-                         (filter #(= coffee-name %))
-                         count))]
-   ])
+(defn get-count-for-coffee-type [all-users-choices coffee-name]
+  [:span (str "x " (->> all-users-choices
+                        vals
+                        (filter #(= coffee-name %))
+                        count))]
+  )
 
-(defn coffee-types [server-ch]
+(defn coffee-button-component [server-ch user-name coffee-name coffee-img]
+  (let [all-users-choices @(subscribe [:choose])]
+    [:li.btn.btn-default {:on-click #(send! server-ch {:action :choose :value coffee-name})
+                          :class    (if (->> all-users-choices
+                                             vec
+                                             (filter (fn [[u c]]
+                                                       (and (= user-name u) (= coffee-name c))))
+                                             not-empty) "active")
+                          }
+     [:img {:src   coffee-img
+            :style {:float "left"}
+            :width "15px"}]
+     [:span coffee-name]
+     [get-count-for-coffee-type all-users-choices coffee-name]
+     ]))
+
+(defn coffee-types [server-ch user-name]
   [:ul.btn-group-vertical
    (for [type @(subscribe [:coffee-types])]
-     [coffee-button-component server-ch (:name type) (:img type)])])
+     [coffee-button-component server-ch user-name (:name type) (:img type)])])
 
-(defn coffee-user-component [server-ch]
+(defn coffee-user-component [server-ch user-name]
   (fn []
     [:div
      [:nav.navbar.navbar-default
@@ -106,7 +116,7 @@
       [:div.panel-heading [:h3.panel-title "Select your coffee"]]
       [:div.panel-body
        (when server-ch
-         [coffee-types server-ch])]]
+         [coffee-types server-ch user-name])]]
      ]
     ))
 
@@ -120,10 +130,12 @@
 
 (defn main-dashboard-component [server-data]
   (let [server-ch @(:server-ch server-data)
+        user-name @(:login server-data)
         organize-info (subscribe [:organize])]
+    (println "XX" user-name)
     (fn []
       (if @organize-info
-        [coffee-user-component server-ch]
+        [coffee-user-component server-ch user-name]
         [organize-component server-ch]
         ))
     ))
@@ -148,7 +160,6 @@
                                 {:type "text"
                                  :placeholder "Name"
                                  :class "form-control"
-                                 ;:value (id @doc)
                                  :onChange #(reset! user-login (-> % .-target .-value))}])
         ]
     [:div.modal-dialog

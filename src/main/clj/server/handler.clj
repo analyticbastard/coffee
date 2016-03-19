@@ -66,6 +66,10 @@
       (println (-> @app-state :session :organizer))
       (when-let [organizer (-> @app-state :session :organizer)]
         (a/>! chat-ch (build-organize-msg organizer)))
+      (when-let [choices (-> @app-state :session :choices not-empty)]
+        (println "choices" choices)
+        (a/>! ws-channel (build-choose-msg choices))
+        )
       (loop []
         (a/alt!
           tapped-ch ([message] (if message
