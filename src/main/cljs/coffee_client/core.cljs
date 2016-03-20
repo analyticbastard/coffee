@@ -164,10 +164,12 @@
         server-ch (:server-ch server-data)
         text-input-component (fn []
                                [:input.form-control
-                                {:type "text"
-                                 :placeholder "Name"
-                                 :class "form-control"
-                                 :onChange #(reset! user-login (-> % .-target .-value))}])
+                                {:type         "text"
+                                 :placeholder  "Name"
+                                 :class        "form-control"
+                                 :on-key-press #(when (and (= 13 (.-charCode %)) (not-empty @user-login))
+                                                 (connect-to-server @user-login server-ch))
+                                 :onChange     #(reset! user-login (-> % .-target .-value))}])
         ]
     [:div.modal-dialog
      [:div.loginmodal-container
