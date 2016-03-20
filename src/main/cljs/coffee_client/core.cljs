@@ -102,16 +102,23 @@
    (for [type @(subscribe [:coffee-types])]
      [coffee-button-component server-ch user-name (:name type) (:img type)])])
 
+(defn navbar-component [page-to-switch-to]
+  [:nav.navbar.navbar-default
+   [:div.container-fluid
+    (when (= page-to-switch-to "/dashboard")
+      [:div.nav.navbar-nav.navbar-left
+       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(secretary/dispatch! "/dashboard")}]])
+    [:p.navbar-text
+     (str "Organized by " @(subscribe [:organize]))
+     ]
+    (when (= page-to-switch-to "/users")
+      [:div.nav.navbar-nav.navbar-right
+       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(secretary/dispatch! "/users")}]])]])
+
 (defn coffee-user-component [server-ch user-name]
   (fn []
     [:div
-     [:nav.navbar.navbar-default
-      [:div.container-fluid
-       [:p.navbar-text
-        (str "Organized by " @(subscribe [:organize]))
-        ]
-       [:div.nav.navbar-nav.navbar-right
-        [:button.navbar-btn.glyphicon.glyphicon-shopping-cart]]]]
+     [navbar-component "/users"]
      [:div.panel.panel-default
       [:div.panel-heading [:h3.panel-title "Select your coffee"]]
       [:div.panel-body
@@ -171,6 +178,16 @@
         {:type     "submit"
          :on-click #(connect-to-server @user-login server-ch)}]]]]))
 
+(defn users-dashboard-component [server-data]
+  (let [choice @(subscribe [:choose])]
+    [:div [navbar-component "/dashboard"]
+     [:ul.list-group
+      (for [user (keys choice)]
+        [:li.list-group-item user (choice user)]
+        )]]
+    )
+  )
+
 
 (defonce reload-data (atom {:last-page "/"}))
 
@@ -189,7 +206,12 @@
     (defroute dashboard "/dashboard" []
               (do
                 (swap! reload-data assoc :last-page "/dashboard")
-                (r/render [main-dashboard-component server-data] app)))))
+                (r/render [main-dashboard-component server-data] app)))
+    (defroute users "/users" []
+              (do
+                (swap! reload-data assoc :last-page "/users")
+                (r/render [users-dashboard-component server-data] app)))
+    ))
 
 #_(let [h (History.)]
   (events/listen h EventType.NAVIGATE #(secretary/dispatch! (.-token %)))
