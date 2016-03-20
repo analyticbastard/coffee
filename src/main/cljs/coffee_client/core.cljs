@@ -29,15 +29,22 @@
 
 (register-handler :organize
                   (fn [db [_ organization-info]]
-                    (when organization-info
-                      (secretary/dispatch! "/dashboard")
-                      (merge db organization-info))))
+                    (println (:uuid db))
+                    (if (and (:uuid db) organization-info)
+                      (do
+                        (secretary/dispatch! "/dashboard")
+                        (merge db organization-info))
+                      db)))
 
 (register-handler :choose
                   (fn [db [_ choice]]
-                    (println choice)
                     (update-in db [:choice] merge choice))
                   )
+
+(register-handler :shutdown (fn [db _]
+                              (secretary/dispatch! "/")
+                              (merge db {:uuid nil :organize nil :choice {}})
+                              ))
 
 (register-sub :choose
               (fn [db _] (reaction (:choice @db))))
@@ -55,7 +62,7 @@
   (let [dispatcher-fn #(let [action (:action %)
                              value  (:value %)]
                         (println "action" action value (= :choose action))
-                        (when (contains? #{:organize :uuid :choose} action)
+                        (when (contains? #{:organize :uuid :choose :shutdown} action)
                           (println action value)
                           (dispatch [action value])))]
     (go-loop []
@@ -124,14 +131,19 @@
       [:div.panel-body
        (when server-ch
          [coffee-types server-ch user-name])]]
+     (when (= user-name @(subscribe [:organize]))
+       [:button.btn.bth-default
+        {:on-click #(send! server-ch {:action :shutdown})}
+        "Close coffee session"])
      ]
     ))
 
 (defn organize-component [server-data]
-  [:div
-   [:h3 "No session active"]
-   [:button {:on-click #(send! @(:server-ch server-data) {:action :organize})
-             }
+  (println server-data)
+  [:div.panel.panel-default
+   [:div.panel-heading [:h3.panel-title "Organize coffee session"]]
+   [:button.btn.bth-default
+    {:on-click #(do (println @(:server-ch server-data)) (send! @(:server-ch server-data) {:action :organize}))}
     "Organize coffee session"]]
   )
 
@@ -139,7 +151,6 @@
   (let [server-ch @(:server-ch server-data)
         user-name @(:login server-data)
         organize-info (subscribe [:organize])]
-    (println "XX" user-name)
     (fn []
       (if @organize-info
         [coffee-user-component server-ch user-name]

@@ -10,7 +10,8 @@
   (:import (java.util UUID)))
 
 
-(def app-state (atom {:session {:organizer nil :participants #{} :choices {}}}))
+(def init-state {:session {:organizer nil :participants #{} :choices {}}})
+(def app-state (atom init-state))
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
@@ -42,11 +43,15 @@
         choose-fn #(let [user-name (@user-map user-id)]
                     (swap! app-state assoc-in [:session :choices user-name] %)
                     (go (>! chat-ch (build-choose-msg {user-name %}))))
+        shutdown-fn #(do
+                      (reset! app-state init-state)
+                      (go (>! chat-ch {:action :shutdown})))
         ]
     (case (:action message)
       :login (login-fn)
       :organize (organize-fn)
       :choose (choose-fn (:value message))
+      :shutdown (shutdown-fn)
       )
     (println "received from client" message)
     ))
