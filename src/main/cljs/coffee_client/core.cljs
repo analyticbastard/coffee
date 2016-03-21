@@ -1,5 +1,5 @@
 (ns coffee-client.core
-  ^:figwheel-always
+  ;^:figwheel-always
   (:require [reagent.core :as r :refer [atom]]
             [chord.client :refer [ws-ch]]
             [cljs.core.async :refer [<! >! put! close! chan]]
@@ -161,7 +161,10 @@
 
 (defn connect-to-server [user-name server-ch]
   (println "login as" user-name)
-  (go (let [{:keys [ws-channel error]} (<! (ws-ch "ws://localhost:3000/ws" {:format :transit-json}))]
+  (go (let [location (.-location js/window)
+            hostname (.-hostname location)
+            port (.-port location)
+            {:keys [ws-channel error]} (<! (ws-ch (str "ws://" hostname ":" port "/ws") {:format :transit-json}))]
         (if (or error (nil? ws-channel))
           (error-component error)
           (do

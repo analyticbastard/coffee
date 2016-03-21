@@ -1,11 +1,13 @@
 (ns server.handler
   (:require [compojure.core :refer :all]
             [compojure.route :as route]
+            [environ.core :as env]
             [ring.middleware.defaults :refer [wrap-defaults site-defaults]]
             [chord.http-kit :refer [with-channel]]
             [clojure.core.async :as async :refer [<! >! put! close! go]]
             [clojure.core.async :as a]
             [ring.middleware.resource :as resource]
+            [org.httpkit.server :as server]
             [server.types :as types])
   (:import (java.util UUID)))
 
@@ -95,22 +97,36 @@
                                                       :user-id user-id}))))
           )))))
 
+
 (defn with-chat-chs [f]
   (let [chat-ch (a/chan)
         chat-mult (a/mult chat-ch)]
     (try
       (f {:chat-ch chat-ch
-          :chat-mult chat-mult})
-      #_(finally
-        (a/close! chat-ch)))))
+          :chat-mult chat-mult}))))
+
+
+(defn wrap-dir-index [handler]
+  (fn [req]
+    (handler
+      (update-in req [:uri]
+                 #(if (= "/" %) "/index.html" %)))))
 
 (def app-routes
-  (resource/wrap-resource
-    (with-chat-chs
-      (fn [chat-chs]
-        (compojure.core/routes
-          (GET "/ws" [] (chord.http-kit/wrap-websocket-handler #(ws-handler % chat-chs) {:format :transit-json}))
-          (GET "/" [] "Hello World")
-          (route/not-found "Not Found"))))
-    "public"))
+  (fn [chat-chs]
+    (compojure.core/routes
+      (GET "/ws" [] (chord.http-kit/wrap-websocket-handler #(ws-handler % chat-chs) {:format :transit-json}))
+      (route/not-found "Not Found"))))
 
+(def app
+  (-> app-routes
+      with-chat-chs
+      (resource/wrap-resource "public")
+      wrap-dir-index
+      ))
+
+
+(defn -main [& [port]]
+  (let [port (Integer. (or port (env/env :port) 5000))]
+    (server/run-server app {:port   port
+                            :format :transit-json})))

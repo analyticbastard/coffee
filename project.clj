@@ -7,6 +7,7 @@
                  [org.clojure/tools.nrepl "0.2.11"]
                  [compojure "1.4.0"]
                  [ring/ring-defaults "0.1.5"]
+                 [environ "1.0.0"]
                  [jarohen/chord "0.7.0"]
                  [org.clojure/clojurescript "1.7.170"]
                  [org.clojure/core.async "0.2.374"
@@ -19,9 +20,11 @@
 
   :plugins [[lein-test-out "0.3.1"]
             [lein-ring "0.9.7"]
-            [lein-figwheel "0.5.0-6"]
             [lein-cljsbuild "1.1.2"]
+            [environ/environ.lein "0.3.1"]
             ]
+
+  :hooks [environ.leiningen.hooks]
 
   :source-paths ["src/main/clj" "src/main/cljs"]
 
@@ -33,10 +36,14 @@
 
   :ring {:handler server.handler/app}
 
+  :uberjar-name "coffee.jar"
+
   :profiles {:dev {:dependencies [[javax.servlet/servlet-api "2.5"]
                                   [ring/ring-mock "0.3.0"]
+                                  [figwheel "0.5.0-6"]
                                   [figwheel-sidecar "0.5.0-1"]
                                   ]
+                   :plugins [[lein-figwheel "0.5.0-6"]]
                    :source-paths ["src/dev/clj"]
                    }
 
@@ -92,5 +99,7 @@
                               ;; :server-logfile "tmp/logs/figwheel-logfile.log"
                               }
                    }
+             :uberjar {:aot :all}
+             :production {:env {:production true}}
              }
   )
