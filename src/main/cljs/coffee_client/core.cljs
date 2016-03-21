@@ -140,11 +140,12 @@
 
 (defn organize-component [server-data]
   (println server-data)
-  [:div.panel.panel-default
-   [:div.panel-heading [:h3.panel-title "Organize coffee session"]]
-   [:button.btn.bth-default
-    {:on-click #(do (println @(:server-ch server-data)) (send! @(:server-ch server-data) {:action :organize}))}
-    "Organize coffee session"]]
+  [:div.modal-dialog
+   [:div.loginmodal-container
+    [:div.panel-heading [:h3.form-sign-in-heading "Organize coffee session"]]
+    [:button.btn.btn-lg.btn-primary.btn-block
+     {:on-click #(do (println @(:server-ch server-data)) (send! @(:server-ch server-data) {:action :organize}))}
+     "Organize coffee session"]]]
   )
 
 (defn main-dashboard-component [server-data]
