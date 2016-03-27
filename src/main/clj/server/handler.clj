@@ -15,18 +15,24 @@
   (:import (datascript.db Datom)))
 
 
-(def init-state (let [session-name (coffee.schema/get-session-name)
-                      conn (d/create-conn (coffee.schema/create-schema))]
-                  (d/transact! conn [{:db/id -1 :session/name session-name}])
-                  (doseq [coffee types/coffee-types]
-                    (let [{:keys [name img]} coffee]
-                      (d/transact! conn [{:db/id -1 :coffee/name name :coffee/img img}])))
-                  {:conn conn}))
-(def app-state (atom init-state))
+(defn init-state [] (let [session-name (coffee.schema/get-session-name)
+                          conn (d/create-conn (coffee.schema/create-schema))]
+                      (d/transact! conn [{:db/id -1 :session/name session-name}])
+                      (doseq [coffee types/coffee-types]
+                        (let [{:keys [name img]} coffee]
+                          (d/transact! conn [{:db/id -1 :coffee/name name :coffee/img img}])))
+                      {:conn conn}))
+(def app-state (atom (init-state)))
 
 (defn send! [ch msg]
   (println "send!" msg)
   (go (>! ch msg)))
+
+(defn process-command [message]
+  (let [command (:command message)]
+    (case command
+      :shutdown (do
+                  (reset! app-state (init-state))))))
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
@@ -38,7 +44,7 @@
     datom))
 
 (defn op-eav [datom-vec]
-  (println (last datom-vec))
+  #_(println (last datom-vec))
   (let [eav (take 3 datom-vec)]
     (if (last datom-vec)
       (cons :db/add eav)
@@ -48,11 +54,17 @@
 (defn respond-server-channel [chat-ch ws-message]
   (let [message (:message ws-message)
         conn    (:conn @app-state)
-        tx-data (:tx-data (d/transact! conn message))
+        tx-data (:datascript-tx message)
+        tx-data (when tx-data
+                  (:tx-data (d/transact! conn tx-data)))
         ]
     (println "received" message)
     (println "processed" tx-data)
-    (send! chat-ch (mapv (comp op-eav datom->vec) tx-data))
+    (if tx-data
+      (send! chat-ch (mapv (comp op-eav datom->vec) tx-data))
+      (do
+        (process-command message)
+        (send! chat-ch message)))
     ))
 
 

@@ -23,8 +23,6 @@
 
 (defonce app (js/document.getElementById "app"))
 
-(def listeners (atom []))
-
 (defn create-ws [ch]
   (go (let [location (.-location js/window)
             hostname (.-hostname location)
@@ -40,12 +38,23 @@
   (println "send!" msg)
   (go [] (>! server-ch msg)))
 
+(defn send-datascript-tx! [server-ch msg]
+  (println "send-datascript-tx!" msg)
+  (send! server-ch {:datascript-tx msg}))
+
+(defn process-command [conn message]
+  (let [command (:command message)]
+    (case command
+      :shutdown (d/reset-conn! conn @(d/create-conn (coffee.schema/create-schema))))))
+
 (defn receive! [server-ch conn]
   (go-loop []
            (let [{:keys [message _] :as msg} (<! server-ch)]
              (println "receive!" message)
              (when message
-               (d/transact! conn message)
+               (if (map? message)
+                 (process-command conn message)
+                 (d/transact! conn message))
                (recur)))))
 
 (register-handler :initialize
@@ -63,21 +72,23 @@
                     (let [server-ch            (:server-ch db)
                           conn-post            (:conn-post db)
                           db-listener-callback (fn [{:keys [db-after]} tx-report]
-                                                 (when (d/entity db-after [:user/name user-name])
-                                                   (secretary/dispatch! "/organize")
-                                                   (d/unlisten! conn-post :login)))
+                                                 (if (:session/organizer (d/entity db-after [:session/name (coffee.schema/get-session-name)]))
+                                                   (do
+                                                     (secretary/dispatch! "/dashboard")
+                                                     (d/unlisten! conn-post :login)
+                                                     )
+                                                   (when (d/entity db-after [:user/name user-name])
+                                                     (secretary/dispatch! "/organize")
+                                                     )))
                           tx-data              [{:db/id     -1
                                                  :user/name user-name}]]
                       (if (d/entity (d/db conn-post) [:user/name user-name])
+                        (if (:session/organizer (d/entity (d/db conn-post) [:session/name (coffee.schema/get-session-name)]))
+                          (secretary/dispatch! "/dashboard")
+                          (secretary/dispatch! "/organize"))
                         (do
-                          (doseq [listener @listeners]
-                            (d/unlisten! conn-post listener))
-                          (if (:session/organizer (d/entity (d/db conn-post) [:session/name "session"]))
-                            (secretary/dispatch! "/dashboard")
-                            (secretary/dispatch! "/organize")))
-                        (d/listen! conn-post :login db-listener-callback))
-                      (swap! listeners conj db-listener-callback)
-                      (send! server-ch tx-data)
+                          (d/listen! conn-post :login db-listener-callback)))
+                      (send-datascript-tx! server-ch tx-data)
                       (assoc db :user-name user-name))))
 
 (register-handler :pre-organize
@@ -86,15 +97,15 @@
                           server-ch (:server-ch db)
                           conn-post (:conn-post db)
                           db-listener-callback (fn [db]
-                                                 (println "db change!")
-                                                 (secretary/dispatch! "/dashboard")
+                                                 (if (:session/organizer (d/entity (d/db conn-post) [:session/name (coffee.schema/get-session-name)]))
+                                                   (secretary/dispatch! "/dashboard"))
                                                  (d/unlisten! conn-post :organize))
                           tx-data   [{:db/id [:session/name (coffee.schema/get-session-name)]
                                       :session/organizer [:user/name user-name]}]]
-                      (d/listen! conn-post db-listener-callback db-listener-callback)
-                      (swap! listeners conj db-listener-callback)
-                      (send! server-ch tx-data)
-                      )))
+                      ;(d/unlisten! conn-post :pre-organize)
+                      (d/listen! conn-post :pre-organize db-listener-callback)
+                      (send-datascript-tx! server-ch tx-data))
+                    db))
 
 (register-handler :pre-choose
                   (fn [db [_ choice]]
@@ -114,32 +125,16 @@
                                          [:db/retract [:user/name user-name] :user/choice [:coffee/name choice]]
                                          {:db/id       [:user/name user-name]
                                           :user/choice [:coffee/name choice]})]]
-                      (send! server-ch tx-data))
+                      (send-datascript-tx! server-ch tx-data))
                     db))
 
 (register-handler :pre-shutdown (fn [db _]
-                                  (let [user-name (:user-name db)
-                                        server-ch (:server-ch db)
-                                        ;tx-data   [:db/retract [:session/name (:db/id (d/entity))]]
+                                  (let [server-ch (:server-ch db)
                                         ]
-                                    ;(send! server-ch tx-data)
-                                    )
+                                    (send! server-ch {:command :shutdown}))
                                   db))
 
-(defn remove-listeners [db]
-  (let [conn (:conn-post db)]
-    (doseq [listener @listeners]
-      (println listener)
-      (d/unlisten! conn listener))
-    )
-  (reset! listeners []))
-
-(register-handler :remove-listeners
-                  (fn [db _]
-                    (remove-listeners db)))
-
 (register-handler :switch-page (fn [db [_ page-url]]
-                                 (remove-listeners db)
                                  (secretary/dispatch! page-url)
                                  db))
 
@@ -153,12 +148,9 @@
          initial              (-> conn (datascript-query query) post-process-fn)
          result-atom          (atom nil)
          db-listener-callback (fn [tx-report]
-                                (println "changed!" (:tx-data tx-report))
                                 (let [value (-> conn (datascript-query query) post-process-fn)]
                                   (reset! result-atom value)))]
-     (d/unlisten! conn query)
      (d/listen! conn query db-listener-callback)
-     (swap! listeners conj db-listener-callback)
      (reaction (or @result-atom initial))))
   ([db query]
    (query->reaction db query identity)))
@@ -198,13 +190,24 @@
                                    [?c :coffee/name ?coffee-name]
                                    ])))
 
-
+(register-sub :post-shutdown
+              (fn [db _]
+                (query->reaction db
+                                 '[:find [?s ...]
+                                   :where
+                                   [?s :session/organizer _]
+                                   ])))
 
 
 (defn error-component [error]
   [:div
    "Couldn't connect to websocket: "
    (pr-str error)])
+
+(defn shutdown-component []
+  [:div.panel.panel-default
+   [:button.btn.bth-default {:on-click #(secretary/dispatch! "/")}
+    "Start over"]])
 
 (defn navbar-component [page-to-switch-to]
   [:nav.navbar.navbar-default
@@ -236,9 +239,8 @@
                         count))]
   )
 
-(defn coffee-button-component [coffee-name coffee-img]
-  (let [all-users-choices @(subscribe [:post-choose])
-        user-name         @(subscribe [:pre-login])]
+(defn coffee-button-component [coffee-name coffee-img all-users-choices]
+  (let [user-name         @(subscribe [:pre-login])]
     [:li.btn.btn-default {:on-click #(dispatch [:pre-choose coffee-name])
                           :class    (when (->> all-users-choices
                                                vec
@@ -254,26 +256,30 @@
      ]))
 
 (defn coffee-types []
-  [:ul.btn-group-vertical
-   (for [[name img] @(subscribe [:post-coffee-types])]
-     [coffee-button-component name img])])
+  (let [all-users-choices @(subscribe [:post-choose])]
+    [:ul.btn-group-vertical
+     (for [[name img] @(subscribe [:post-coffee-types])]
+       [coffee-button-component name img all-users-choices])]))
 
 (defn main-dashboard-component []
-  [:div
-   [navbar-component "/users"]
-   [:div.panel.panel-default
-    [:div.panel-heading [:h3.panel-title "Select your coffee"]]
-    [:div.panel-body
-     [coffee-types]
-     ]]
-   (if (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
+  (println "==> " @(subscribe [:post-shutdown]))
+  (if (empty? @(subscribe [:post-shutdown]))
+    [shutdown-component]
+    [:div
+     [navbar-component "/users"]
+     [:div.panel.panel-default
+      [:div.panel-heading [:h3.panel-title "Select your coffee"]]
+      [:div.panel-body
+       [coffee-types]
+       ]]
+     (if (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
        [:button.btn.bth-default
         {:on-click #(dispatch [:pre-shutdown])}
         "Close coffee session"]
        [:button.btn.bth-default
         {:on-click #(dispatch [:pre-organize])}
         "Take over session"])
-   ])
+     ]))
 
 (defn organize-component []
   [:div.modal-dialog
@@ -286,8 +292,7 @@
 
 
 (defn login-page []
-  (let [                                                    ;_ @(subscribe [:initialize])
-        user-login (atom "")
+  (let [user-login (atom "")
         login-fn #(dispatch [:pre-login @user-login])
         text-input-component (fn []
                                [:input.form-control
