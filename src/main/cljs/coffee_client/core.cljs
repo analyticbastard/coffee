@@ -23,6 +23,8 @@
 
 (defonce app (js/document.getElementById "app"))
 
+(def listeners (atom []))
+
 (defn create-ws [ch]
   (go (let [location (.-location js/window)
             hostname (.-hostname location)
@@ -58,19 +60,23 @@
 
 (register-handler :pre-login
                   (fn [db [_ user-name]]
-                    (let [server-ch (:server-ch db)
-                          conn-post (:conn-post db)
+                    (let [server-ch            (:server-ch db)
+                          conn-post            (:conn-post db)
                           db-listener-callback (fn [{:keys [db-after]} tx-report]
                                                  (when (d/entity db-after [:user/name user-name])
                                                    (secretary/dispatch! "/organize")
                                                    (d/unlisten! conn-post :login)))
-                          tx-data   [{:db/id -1
-                                      :user/name user-name}]]
+                          tx-data              [{:db/id     -1
+                                                 :user/name user-name}]]
                       (if (d/entity (d/db conn-post) [:user/name user-name])
-                        (if (:session/organizer (d/entity (d/db conn-post) [:session/name "session"]))
-                          (secretary/dispatch! "/dashboard")
-                          (secretary/dispatch! "/organize"))
+                        (do
+                          (doseq [listener @listeners]
+                            (d/unlisten! conn-post listener))
+                          (if (:session/organizer (d/entity (d/db conn-post) [:session/name "session"]))
+                            (secretary/dispatch! "/dashboard")
+                            (secretary/dispatch! "/organize")))
                         (d/listen! conn-post :login db-listener-callback))
+                      (swap! listeners conj db-listener-callback)
                       (send! server-ch tx-data)
                       (assoc db :user-name user-name))))
 
@@ -80,14 +86,15 @@
                           server-ch (:server-ch db)
                           conn-post (:conn-post db)
                           db-listener-callback (fn [db]
-                                                 (println "db change xx!")
+                                                 (println "db change!")
                                                  (secretary/dispatch! "/dashboard")
                                                  (d/unlisten! conn-post :organize))
                           tx-data   [{:db/id [:session/name (coffee.schema/get-session-name)]
                                       :session/organizer [:user/name user-name]}]]
-                      (d/listen! conn-post :organize db-listener-callback)
-                      (send! server-ch tx-data))
-                    db))
+                      (d/listen! conn-post db-listener-callback db-listener-callback)
+                      (swap! listeners conj db-listener-callback)
+                      (send! server-ch tx-data)
+                      )))
 
 (register-handler :pre-choose
                   (fn [db [_ choice]]
@@ -119,19 +126,39 @@
                                     )
                                   db))
 
+(defn remove-listeners [db]
+  (let [conn (:conn-post db)]
+    (doseq [listener @listeners]
+      (println listener)
+      (d/unlisten! conn listener))
+    )
+  (reset! listeners []))
+
+(register-handler :remove-listeners
+                  (fn [db _]
+                    (remove-listeners db)))
+
+(register-handler :switch-page (fn [db [_ page-url]]
+                                 (remove-listeners db)
+                                 (secretary/dispatch! page-url)
+                                 db))
+
 (defn datascript-query [conn query]
   (let [db (d/db conn)]
     (d/q query db)))
 
 (defn query->reaction
   ([db query post-process-fn]
-   (let [conn (:conn-post @db)
-         initial (-> conn (datascript-query query) post-process-fn)
-         result-atom (atom nil)
+   (let [conn                 (:conn-post @db)
+         initial              (-> conn (datascript-query query) post-process-fn)
+         result-atom          (atom nil)
          db-listener-callback (fn [tx-report]
+                                (println "changed!" (:tx-data tx-report))
                                 (let [value (-> conn (datascript-query query) post-process-fn)]
                                   (reset! result-atom value)))]
-     (d/listen! conn db-listener-callback)
+     (d/unlisten! conn query)
+     (d/listen! conn query db-listener-callback)
+     (swap! listeners conj db-listener-callback)
      (reaction (or @result-atom initial))))
   ([db query]
    (query->reaction db query identity)))
@@ -184,13 +211,13 @@
    [:div.container-fluid
     (when (= page-to-switch-to "/dashboard")
       [:div.nav.navbar-nav.navbar-left
-       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(secretary/dispatch! "/dashboard")}]])
+       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(dispatch [:switch-page "/dashboard"])}]])
     [:p.navbar-text
      (str "Organized by " @(subscribe [:post-organize]))
      ]
     (when (= page-to-switch-to "/users")
       [:div.nav.navbar-nav.navbar-right
-       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(secretary/dispatch! "/users")}]])]])
+       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(dispatch [:switch-page "/users"])}]])]])
 
 (defn users-dashboard-component []
   (let [choice (into {} @(subscribe [:post-choose]))]
