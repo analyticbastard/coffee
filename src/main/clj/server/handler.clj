@@ -8,75 +8,64 @@
             [clojure.core.async :as a]
             [ring.middleware.resource :as resource]
             [org.httpkit.server :as server]
-            [server.types :as types])
-  (:import (java.util UUID)))
+            [datascript.core :as d]
+            [coffee.schema]
+            [server.types :as types]
+            )
+  (:import (datascript.db Datom)))
 
 
-(def init-state {:session {:organizer nil :participants #{} :choices {}}})
+(def init-state (let [session-name (coffee.schema/get-session-name)
+                      conn (d/create-conn (coffee.schema/create-schema))]
+                  (d/transact! conn [{:db/id -1 :session/name session-name}])
+                  (doseq [coffee types/coffee-types]
+                    (let [{:keys [name img]} coffee]
+                      (d/transact! conn [{:db/id -1 :coffee/name name :coffee/img img}])))
+                  {:conn conn}))
 (def app-state (atom init-state))
+
+(defn send! [ch msg]
+  (println "send!" msg)
+  (go (>! ch msg)))
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
-  (go (>! ws-channel message)))
+  (send! ws-channel message))
 
-(defn build-organize-msg [organizer-name]
-  {:action :organize
-   :value  {:organizer    organizer-name
-            :coffee-types types/coffee-types}}
-  )
+(defn datom->vec [datom]
+  (if (instance? Datom datom)
+    (mapv identity datom)
+    datom))
 
-(defn build-choose-msg [choices]
-  {:action :choose
-   :value choices}
-  )
+(defn op-eav [datom-vec]
+  (println (last datom-vec))
+  (let [eav (take 3 datom-vec)]
+    (if (last datom-vec)
+      (cons :db/add eav)
+      (cons :db/retract eav)
+      )))
 
-(defn respond-server-channel [chat-ch user-id user-map ws-message]
-  (println "ws-message" ws-message)
-  (let [message     (:message ws-message)
-        login-fn #(let [user-name (:user-name message)]
-                   (println user-name)
-                   (swap! app-state update-in [:session :participants] conj user-name)
-                   (swap! user-map assoc user-id user-name))
-        organize-fn #(let [organizer-name (@user-map user-id)]
-                      (println "organizer" organizer-name)
-                      (swap! app-state assoc-in [:session :organizer] organizer-name)
-                      (go (>! chat-ch (build-organize-msg organizer-name)))
-                      )
-        choose-fn #(let [user-name (@user-map user-id)]
-                    (swap! app-state assoc-in [:session :choices user-name] %)
-                    (go (>! chat-ch (build-choose-msg {user-name %}))))
-        shutdown-fn #(do
-                      (reset! app-state init-state)
-                      (go (>! chat-ch {:action :shutdown})))
+(defn respond-server-channel [chat-ch ws-message]
+  (let [message (:message ws-message)
+        conn    (:conn @app-state)
+        tx-data (:tx-data (d/transact! conn message))
         ]
-    (case (:action message)
-      :login (login-fn)
-      :organize (organize-fn)
-      :choose (choose-fn (:value message))
-      :shutdown (shutdown-fn)
-      )
-    (println "received from client" message)
+    (println "received" message)
+    (println "processed" tx-data)
+    (send! chat-ch (mapv (comp op-eav datom->vec) tx-data))
     ))
-
 
 
 (defn ws-handler [{:keys [ws-channel] :as req} {:keys [chat-ch chat-mult]}]
   (let [tapped-ch (a/chan)
-        user-id (UUID/randomUUID)
-        user-map (atom {})]
+        conn (:conn @app-state)
+        init-tx   (mapv (comp op-eav datom->vec) (d/datoms (d/db conn) :eavt))]
     (a/tap chat-mult tapped-ch)
-    (println (format "Opened connection from %s, user-id %s."
-                     (:remote-addr req)
-                     user-id))
+    (println (format "Opened connection from %s`."
+                     (:remote-addr req)))
     (go
-      (a/>! ws-channel {:action :uuid :value user-id})
-      (println (-> @app-state :session :organizer))
-      (when-let [organizer (-> @app-state :session :organizer)]
-        (a/>! chat-ch (build-organize-msg organizer)))
-      (when-let [choices (-> @app-state :session :choices not-empty)]
-        (println "choices" choices)
-        (a/>! ws-channel (build-choose-msg choices))
-        )
+      (when (not-empty init-tx)
+        (send! ws-channel init-tx))
       (loop []
         (a/alt!
           tapped-ch ([message] (if message
@@ -88,12 +77,12 @@
                                    (a/close! ws-channel))))
 
           ws-channel ([ws-message] (if ws-message
-                                     (do (respond-server-channel chat-ch user-id user-map ws-message)
+                                     (do (respond-server-channel chat-ch ws-message)
                                          (recur))
                                      (do
                                        (println "Exiting")
                                        (a/untap chat-mult tapped-ch)
-                                       (a/>! chat-ch {:type :user-left
+                                       #_(a/>! chat-ch {:type :user-left
                                                       :user-id user-id}))))
           )))))
 

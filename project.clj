@@ -16,6 +16,7 @@
                  [reagent-utils "0.1.7"]
                  [re-frame "0.7.0-alpha-2"]
                  [secretary "1.2.3"]
+                 [datascript "0.15.0"]
                  ]
 
   :plugins [[lein-test-out "0.3.1"]
@@ -26,7 +27,7 @@
 
   :hooks [environ.leiningen.hooks]
 
-  :source-paths ["src/main/clj" "src/main/cljs"]
+  :source-paths ["src/main/clj" "src/main/cljs" "src/main/cljc"]
 
   :test-paths ["src/test/clj" "src/test/cljs"]
 
@@ -40,14 +41,18 @@
 
   :profiles {:dev {:dependencies [[javax.servlet/servlet-api "2.5"]
                                   [ring/ring-mock "0.3.0"]
-                                  [figwheel "0.5.0-6"]
+                                  [com.cemerick/piggieback "0.2.1"]
                                   [figwheel-sidecar "0.5.0-1"]
                                   ]
-                   :plugins [[lein-figwheel "0.5.0-6"]]
+                   :repl-options {:nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
                    :source-paths ["src/dev/clj"]
                    }
 
-             :web {:cljsbuild {:builds [{:id "dev"
+             :web {:dependencies [[figwheel "0.5.0-6"]
+                                  [figwheel-sidecar "0.5.0-1"]
+                                  ]
+                   :plugins [[lein-figwheel "0.5.0-6"]]
+                   :cljsbuild {:builds [{:id "dev"
                                          :source-paths ["src/main/cljs"]
 
                                          ;; If no code is to be run, set :figwheel true for continued automagical reloading

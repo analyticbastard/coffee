@@ -6,8 +6,7 @@
 
 (comment
   ;; start server
-  (def s (server/run-server server.handler/app-routes {:port 3000
-                                                       :format :transit-json}))
+  (def s (server/run-server server.handler/app {:port 3000 :format :transit-json}))
 
   ;; stop server
   (s :timeout 100)

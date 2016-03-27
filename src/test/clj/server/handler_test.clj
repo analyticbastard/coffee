@@ -1,7 +1,7 @@
-(ns coffee.handler-test
+(ns server.handler-test
   (:require [clojure.test :refer :all]
             [ring.mock.request :as mock]
-            [coffee.handler :refer :all]))
+            [server.handler :refer :all]))
 
 (deftest test-app
   (testing "main route"
