@@ -197,17 +197,18 @@
     "Start over"]])
 
 (defn navbar-component [page-to-switch-to]
-  [:nav.navbar.navbar-default
-   [:div.container-fluid
-    (when (= page-to-switch-to "/dashboard")
-      [:div.nav.navbar-nav.navbar-left
-       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(secretary/dispatch! "/dashboard")}]])
-    [:p.navbar-text
-     (str "Organized by " @(subscribe [:post-organize]))
-     ]
-    (when (= page-to-switch-to "/users")
-      [:div.nav.navbar-nav.navbar-right
-       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(secretary/dispatch! "/users")}]])]])
+  (let [organizer @(subscribe [:post-organize])]
+    [:nav.navbar.navbar-default
+     [:div.container-fluid
+      (when (= page-to-switch-to "/dashboard")
+        [:div.nav.navbar-nav.navbar-left
+         [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(secretary/dispatch! "/dashboard")}]])
+      [:p.navbar-text
+       (str "Organized by " organizer)
+       ]
+      (when (= page-to-switch-to "/users")
+        [:div.nav.navbar-nav.navbar-right
+         [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(secretary/dispatch! "/users")}]])]]))
 
 (defn users-dashboard-component []
   (let [choice (into {} @(subscribe [:post-choose]))]
