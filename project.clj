@@ -33,7 +33,7 @@
 
   :resource-paths ["src/main/resources"]
 
-  :clean-targets ^{:protect false} ["src/main/resources/public/js/compiled" "target"]
+  ;:clean-targets ^{:protect false} ["src/main/resources/public/js/compiled" "target"]
 
   :ring {:handler server.handler/app}
 
