@@ -57,37 +57,26 @@
                  (d/transact! conn message))
                (recur)))))
 
-(register-handler :initialize
+(register-handler :init-server-ch
                   (fn [db [_ server-ch]]
-                    (let [conn-post (d/create-conn (coffee.schema/create-schema))]
-                      (println "init" server-ch)
+                    (println "init" server-ch)
+                    (assoc db :server-ch server-ch)))
+
+(register-handler :initialize
+                  (fn [db _]
+                    (let [conn-post (d/create-conn (coffee.schema/create-schema))
+                          server-ch (:server-ch db)]
                       (when server-ch
                         (receive! server-ch conn-post)
                         (assoc db :conn-pre (d/create-conn (coffee.schema/create-schema))
-                                  :conn-post conn-post
-                                  :server-ch server-ch)))))
+                                  :conn-post conn-post)
+                        ))))
 
 (register-handler :pre-login
                   (fn [db [_ user-name]]
                     (let [server-ch            (:server-ch db)
-                          conn-post            (:conn-post db)
-                          db-listener-callback (fn [{:keys [db-after]} tx-report]
-                                                 (if (:session/organizer (d/entity db-after [:session/name (coffee.schema/get-session-name)]))
-                                                   (do
-                                                     (secretary/dispatch! "/dashboard")
-                                                     (d/unlisten! conn-post :login)
-                                                     )
-                                                   (when (d/entity db-after [:user/name user-name])
-                                                     (secretary/dispatch! "/organize")
-                                                     )))
                           tx-data              [{:db/id     -1
                                                  :user/name user-name}]]
-                      (if (d/entity (d/db conn-post) [:user/name user-name])
-                        (if (:session/organizer (d/entity (d/db conn-post) [:session/name (coffee.schema/get-session-name)]))
-                          (secretary/dispatch! "/dashboard")
-                          (secretary/dispatch! "/organize"))
-                        (do
-                          (d/listen! conn-post :login db-listener-callback)))
                       (send-datascript-tx! server-ch tx-data)
                       (assoc db :user-name user-name))))
 
@@ -95,15 +84,8 @@
                   (fn [db _]
                     (let [user-name (:user-name db)
                           server-ch (:server-ch db)
-                          conn-post (:conn-post db)
-                          db-listener-callback (fn [db]
-                                                 (if (:session/organizer (d/entity (d/db conn-post) [:session/name (coffee.schema/get-session-name)]))
-                                                   (secretary/dispatch! "/dashboard"))
-                                                 (d/unlisten! conn-post :organize))
                           tx-data   [{:db/id [:session/name (coffee.schema/get-session-name)]
                                       :session/organizer [:user/name user-name]}]]
-                      ;(d/unlisten! conn-post :pre-organize)
-                      (d/listen! conn-post :pre-organize db-listener-callback)
                       (send-datascript-tx! server-ch tx-data))
                     db))
 
@@ -134,9 +116,6 @@
                                     (send! server-ch {:command :shutdown}))
                                   db))
 
-(register-handler :switch-page (fn [db [_ page-url]]
-                                 (secretary/dispatch! page-url)
-                                 db))
 
 (defn datascript-query [conn query]
   (let [db (d/db conn)]
@@ -144,23 +123,31 @@
 
 (defn query->reaction
   ([db query post-process-fn]
-   (let [conn                 (:conn-post @db)
-         initial              (-> conn (datascript-query query) post-process-fn)
-         result-atom          (atom nil)
-         db-listener-callback (fn [tx-report]
-                                (let [value (-> conn (datascript-query query) post-process-fn)]
-                                  (reset! result-atom value)))]
-     (d/listen! conn query db-listener-callback)
-     (reaction (or @result-atom initial))))
+   (when-let [conn (:conn-post @db)]
+     (let [initial              (-> conn (datascript-query query) post-process-fn)
+           result-atom          (atom nil)
+           db-listener-callback (fn [tx-report]
+                                  (let [value (-> conn (datascript-query query) post-process-fn)]
+                                    (reset! result-atom value)))]
+       (d/listen! conn query db-listener-callback)
+       (reaction (or @result-atom initial)))))
   ([db query]
    (query->reaction db query identity)))
 
 (register-sub :pre-login
-              (fn [db]
+              (fn [db _]
                 (reaction (:user-name @db))))
 
 (register-sub :initialize
-              (fn [db] db))
+              (fn [db _] db))
+
+(register-sub :post-login
+              (fn [db _]
+                (query->reaction db
+                                 '[:find [?name ...]
+                                   :where
+                                   [?u :user/name ?name]]
+                                 )))
 
 (register-sub :post-organize
               (fn [db _]
@@ -214,13 +201,13 @@
    [:div.container-fluid
     (when (= page-to-switch-to "/dashboard")
       [:div.nav.navbar-nav.navbar-left
-       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(dispatch [:switch-page "/dashboard"])}]])
+       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(secretary/dispatch! "/dashboard")}]])
     [:p.navbar-text
      (str "Organized by " @(subscribe [:post-organize]))
      ]
     (when (= page-to-switch-to "/users")
       [:div.nav.navbar-nav.navbar-right
-       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(dispatch [:switch-page "/users"])}]])]])
+       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(secretary/dispatch! "/users")}]])]])
 
 (defn users-dashboard-component []
   (let [choice (into {} @(subscribe [:post-choose]))]
@@ -262,7 +249,6 @@
        [coffee-button-component name img all-users-choices])]))
 
 (defn main-dashboard-component []
-  (println "==> " @(subscribe [:post-shutdown]))
   (if (empty? @(subscribe [:post-shutdown]))
     [shutdown-component]
     [:div
@@ -282,18 +268,23 @@
      ]))
 
 (defn organize-component []
-  [:div.modal-dialog
-   [:div.loginmodal-container
-    [:div.panel-heading [:h3.form-sign-in-heading "Organize coffee session"]]
-    [:button.btn.btn-lg.btn-primary.btn-block
-     {:on-click #(dispatch [:pre-organize])}
-     "Organize coffee session"]]]
+  (let [organizer (subscribe [:post-organize])]
+    (when (and organizer @organizer)
+      (secretary/dispatch! "/dashboard"))
+    [:div.modal-dialog
+     [:div.loginmodal-container
+      [:div.panel-heading [:h3.form-sign-in-heading "Organize coffee session"]]
+      [:button.btn.btn-lg.btn-primary.btn-block
+       {:on-click #(dispatch [:pre-organize])}
+       "Organize coffee session"]]])
   )
 
 
 (defn login-page []
-  (let [user-login (atom "")
-        login-fn #(dispatch [:pre-login @user-login])
+  (let [user-login           (atom "")
+        login-fn             #(when-not (empty? @user-login)
+                               (dispatch [:initialize])
+                               (dispatch [:pre-login @user-login]))
         text-input-component (fn []
                                [:input.form-control
                                 {:type         "text"
@@ -303,14 +294,20 @@
                                                  (login-fn))
                                  :onChange     #(reset! user-login (-> % .-target .-value))}])
         ]
-    [:div.modal-dialog
-     [:div.loginmodal-container
-      [:div.form-sign-in
-       [:h2.form-sign-in-heading "Sign In"]
-       [text-input-component]
-       [:input.btn.btn-lg.btn-primary.btn-block
-        {:type     "submit"
-         :on-click login-fn}]]]]))
+    (fn []
+      (let [user-names (subscribe [:post-login])]
+        (when (and user-names (contains? (set @user-names) @user-login))
+          (if @(subscribe [:post-organize])
+            (secretary/dispatch! "/dashboard")
+            (secretary/dispatch! "/organize"))))
+      [:div.modal-dialog
+       [:div.loginmodal-container
+        [:div.form-sign-in
+         [:h2.form-sign-in-heading "Sign In"]
+         [text-input-component]
+         [:input.btn.btn-lg.btn-primary.btn-block
+          {:type     "submit"
+           :on-click login-fn}]]]])))
 
 
 (defonce reload-data (atom {:last-page "/"}))
@@ -320,9 +317,10 @@
             (do
               (swap! reload-data assoc :last-page "/")
               (let [ch (chan)]
+                (println "jo")
                 (create-ws ch)
-                (go (dispatch [:initialize (<! ch)])
-                    (r/render [login-page] app)))))
+                (go (dispatch [:init-server-ch (<! ch)]))
+                (r/render [login-page] app))))
   (defroute organize "/organize" []
             (do
               (swap! reload-data assoc :last-page "/organize")
