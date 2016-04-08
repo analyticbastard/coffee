@@ -43,6 +43,7 @@
   (send! server-ch {:datascript-tx msg}))
 
 (defn process-command [conn message]
+  (println (:command message) (= :shutdown (:command message)))
   (let [command (:command message)]
     (case command
       :shutdown (d/reset-conn! conn @(d/create-conn (coffee.schema/create-schema))))))

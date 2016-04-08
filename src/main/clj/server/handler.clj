@@ -25,14 +25,18 @@
 (def app-state (atom (init-state)))
 
 (defn send! [ch msg]
-  (println "send!" msg)
-  (go (>! ch msg)))
+  (println "send")
+  (go (>! ch msg)
+      (println "send!" msg "this message forces evaluation of this go block up to this point!"))
+  msg)
 
 (defn process-command [message]
   (let [command (:command message)]
     (case command
       :shutdown (do
-                  (reset! app-state (init-state))))))
+                  (reset! app-state (init-state))
+                  (println @app-state))))
+  message)
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
@@ -62,11 +66,15 @@
     (println "processed" tx-data)
     (if tx-data
       (send! chat-ch (mapv (comp op-eav datom->vec) tx-data))
-      (do
-        (process-command message)
-        (send! chat-ch message)))
+      (->> (process-command message)
+           (send! chat-ch)))
     ))
 
+
+(defn close-conn [chat-mult tapped-ch]
+  (Thread/sleep 5000)
+  (a/untap chat-mult tapped-ch)
+  (println "Closing socket"))
 
 (defn ws-handler [{:keys [ws-channel] :as req} {:keys [chat-ch chat-mult]}]
   (let [tapped-ch (a/chan)
@@ -81,21 +89,22 @@
       (loop []
         (a/alt!
           tapped-ch ([message] (if message
-                                 (do
-                                   (respond-to-tapped-ch ws-channel message)
+                                 (case (respond-to-tapped-ch ws-channel message)
+                                   :shutdown (future (close-conn chat-mult tapped-ch))
                                    (recur))
                                  (do
                                    (println "NO msg")
                                    (a/close! ws-channel))))
 
           ws-channel ([ws-message] (if ws-message
-                                     (do (respond-server-channel chat-ch ws-message)
-                                         (recur))
+                                     (case (respond-server-channel chat-ch ws-message)
+                                       :shutdown (future (close-conn chat-mult tapped-ch))
+                                       (recur))
                                      (do
                                        (println "Exiting")
                                        (a/untap chat-mult tapped-ch)
-                                       #_(a/>! chat-ch {:type :user-left
-                                                      :user-id user-id}))))
+                                       #_(a/>! chat-ch {:type    :user-left
+                                                        :user-id user-id}))))
           )))))
 
 
