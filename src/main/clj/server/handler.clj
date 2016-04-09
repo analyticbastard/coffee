@@ -35,12 +35,13 @@
     (case command
       :shutdown (do
                   (reset! app-state (init-state))
-                  (println @app-state))))
+                  )))
   message)
 
 (defn respond-to-tapped-ch [ws-channel message]
   (println "multicasting message to user" message)
-  (send! ws-channel message))
+  (-> (send! ws-channel message)
+      :command))
 
 (defn datom->vec [datom]
   (if (instance? Datom datom)
@@ -48,7 +49,6 @@
     datom))
 
 (defn op-eav [datom-vec]
-  #_(println (last datom-vec))
   (let [eav (take 3 datom-vec)]
     (if (last datom-vec)
       (cons :db/add eav)
@@ -67,12 +67,13 @@
     (if tx-data
       (send! chat-ch (mapv (comp op-eav datom->vec) tx-data))
       (->> (process-command message)
-           (send! chat-ch)))
+           (send! chat-ch)
+           :command))
     ))
 
 
 (defn close-conn [chat-mult tapped-ch]
-  (Thread/sleep 5000)
+  (Thread/sleep 500)
   (a/untap chat-mult tapped-ch)
   (println "Closing socket"))
 
@@ -86,20 +87,29 @@
     (go
       (when (not-empty init-tx)
         (send! ws-channel init-tx))
-      (loop []
+      (loop [in-session-user? true]
         (a/alt!
           tapped-ch ([message] (if message
-                                 (case (respond-to-tapped-ch ws-channel message)
-                                   :shutdown (future (close-conn chat-mult tapped-ch))
-                                   (recur))
+                                 (->> (respond-to-tapped-ch ws-channel message)
+                                      ((partial #(let [shutdown? (= % :shutdown)]
+                                                  (when shutdown?
+                                                    (close-conn chat-mult tapped-ch)
+                                                    (a/close! ws-channel))
+                                                  shutdown?)))
+                                      not
+                                      recur)
                                  (do
                                    (println "NO msg")
                                    (a/close! ws-channel))))
 
-          ws-channel ([ws-message] (if ws-message
-                                     (case (respond-server-channel chat-ch ws-message)
-                                       :shutdown (future (close-conn chat-mult tapped-ch))
-                                       (recur))
+          ws-channel ([ws-message] (if (and in-session-user? ws-message)
+                                     (->> (respond-server-channel chat-ch ws-message)
+                                          ((partial #(let [shutdown? (= % :shutdown)]
+                                                      (when shutdown?
+                                                        (close-conn chat-mult tapped-ch))
+                                                      shutdown?)))
+                                          not
+                                          recur)
                                      (do
                                        (println "Exiting")
                                        (a/untap chat-mult tapped-ch)
