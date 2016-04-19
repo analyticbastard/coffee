@@ -11,7 +11,9 @@
   (:require-macros [cljs.core.async.macros :refer [go go-loop]]
                    [reagent.ratom :refer [reaction]])
   (:import goog.History
-           goog.history.EventType)
+           goog.history.EventType
+           goog.net.IframeIo
+           )
   )
 
 
@@ -187,6 +189,83 @@
                                    ])))
 
 
+(defn set-upload-indicator []
+  (let [class "fa fa-spinner fa-spin fa-pulse"]
+    #_(session/put! :upload-status [:div
+                                  [:p "Uploading file... "
+                                   [:span {:class class}]]])))
+
+(defn into-list [items]
+  (into [:ul]
+        (for [i items]
+          [:li i])))
+
+(defn set-status [class title items]
+  [:div {:class class}
+   [:h4 title]
+   (into-list items)])
+
+;;; goog.net.IFrameIO routines
+(defn iframe-response-ok [msg]
+  (let [status (set-status "alert alert-success"
+                           "Upload Successful"
+                           [(str "Filename: " (:filename msg))
+                            (str "Size: " (:size msg))
+                            (str "Tempfile: " (:tempfile msg))])]
+    ))
+
+(defn iframe-response-error [msg]
+  (let [status (set-status "alert alert-danger"
+                           "Upload Failure"
+                           [(str "Status: " (:status msg))
+                            (str (:message msg))])]
+    ))
+
+(defn handle-iframe-response [json-msg]
+  (let [msg (js->clj json-msg :keywordize-keys true)
+        unexpected [:div.alert.alert-danger
+                    [:h4 "Unexpected Error"]
+                    [:ul
+                     [:li (str "Status: " (:status msg))]
+                     [:li (:message msg)]]]]
+    (.log js/console (str "iframe-response: " msg))
+    (cond
+      (= "OK" (:status msg)) (iframe-response-ok msg)
+      (= "ERROR" (:status msg)) (iframe-response-error msg)
+      :else (comment unexpected))))
+
+;;; Stole this from Dmitri Sotnikov - thanks.
+;;; Original code is at https://github.com/yogthos
+(defn iframeio-upload-file [form-id]
+  (let [el (.getElementById js/document form-id)
+        iframe (IframeIo.)]
+    (events/listen iframe EventType.COMPLETE
+                   (fn [event]
+                     (let [rsp (.getResponseJson iframe)
+                           status ()])
+                     (handle-iframe-response (.getResponseJson iframe))
+                     (.dispose iframe)))
+    (set-upload-indicator)
+    (.sendFromForm iframe el "/upload")))
+
+(defn iframeio-upload-button []
+  [:div
+   [:hr]
+   [:button {:class "btn btn-primary"
+             :type "button"
+             :on-click #(iframeio-upload-file "upload-form")}
+    "Upload file" ]])
+
+(defn upload-component []
+  [:div
+   [:form {:id "upload-form"
+           :enc-type "multipart/form-data"
+           :method "POST"}
+    [:label "Organize a new JFF by uploading your CSV menu file"]
+    [:input {:type "file"
+             :name "upload-file"
+             :id "upload-file"}]]])
+
 (defn error-component [error]
   [:div
    "Couldn't connect to websocket: "
@@ -275,8 +354,10 @@
       (secretary/dispatch! "/dashboard"))
     [:div.modal-dialog
      [:div.loginmodal-container
-      [:div.panel-heading [:h3.form-sign-in-heading "Organize coffee session"]]
-      [:button.btn.btn-lg.btn-primary.btn-block
+      [:div.panel-heading [:h3.form-sign-in-heading "Organize JFF"]]
+      [upload-component]
+      [iframeio-upload-button]
+      #_[:button.btn.btn-lg.btn-primary.btn-block
        {:on-click #(dispatch [:pre-organize])}
        "Organize coffee session"]]])
   )

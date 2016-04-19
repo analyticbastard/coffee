@@ -11,6 +11,7 @@
             [datascript.core :as d]
             [coffee.schema]
             [server.types :as types]
+            [clojure.string :refer [split]]
             )
   (:import (datascript.db Datom)))
 
@@ -132,10 +133,19 @@
       (update-in req [:uri]
                  #(if (= "/" %) "/index.html" %)))))
 
+(defn process-and-transact-menu [body]
+  (let [conn (:conn @app-state)
+        menu (split body #"\n\n")]
+    (println menu)
+    (doseq [item (split menu #"\n")]
+      (println item))
+    #_(d/transact! conn )))
+
 (def app-routes
   (fn [chat-chs]
     (compojure.core/routes
       (GET "/ws" [] (chord.http-kit/wrap-websocket-handler #(ws-handler % chat-chs) {:format :transit-json}))
+      (POST "/upload" {body :body} (process-and-transact-menu (String. (.bytes body))))
       (route/not-found "Not Found"))))
 
 (def app
