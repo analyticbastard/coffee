@@ -135,11 +135,13 @@
 
 (defn process-and-transact-menu [body]
   (let [conn (:conn @app-state)
-        menu (split body #"\n\n")]
-    (println menu)
-    (doseq [item (split menu #"\n")]
-      (println item))
-    #_(d/transact! conn )))
+        menu (second (split body #"\r\n\r\n"))]
+    (doseq [item (butlast (split menu #"\n"))]
+      (let [itemp-parts (split item #",")
+            name (first itemp-parts)
+            type (second name)]
+        (d/transact! conn [{:db/id -1 :coffe/name name}])))
+    {:body ""}))
 
 (def app-routes
   (fn [chat-chs]

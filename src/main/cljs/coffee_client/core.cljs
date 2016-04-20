@@ -206,45 +206,19 @@
    (into-list items)])
 
 ;;; goog.net.IFrameIO routines
-(defn iframe-response-ok [msg]
-  (let [status (set-status "alert alert-success"
-                           "Upload Successful"
-                           [(str "Filename: " (:filename msg))
-                            (str "Size: " (:size msg))
-                            (str "Tempfile: " (:tempfile msg))])]
-    ))
 
-(defn iframe-response-error [msg]
-  (let [status (set-status "alert alert-danger"
-                           "Upload Failure"
-                           [(str "Status: " (:status msg))
-                            (str (:message msg))])]
-    ))
-
-(defn handle-iframe-response [json-msg]
-  (let [msg (js->clj json-msg :keywordize-keys true)
-        unexpected [:div.alert.alert-danger
-                    [:h4 "Unexpected Error"]
-                    [:ul
-                     [:li (str "Status: " (:status msg))]
-                     [:li (:message msg)]]]]
-    (.log js/console (str "iframe-response: " msg))
-    (cond
-      (= "OK" (:status msg)) (iframe-response-ok msg)
-      (= "ERROR" (:status msg)) (iframe-response-error msg)
-      :else (comment unexpected))))
 
 ;;; Stole this from Dmitri Sotnikov - thanks.
 ;;; Original code is at https://github.com/yogthos
 (defn iframeio-upload-file [form-id]
   (let [el (.getElementById js/document form-id)
         iframe (IframeIo.)]
-    (events/listen iframe EventType.COMPLETE
+    (events/listen iframe EventType.READY
                    (fn [event]
-                     (let [rsp (.getResponseJson iframe)
-                           status ()])
-                     (handle-iframe-response (.getResponseJson iframe))
-                     (.dispose iframe)))
+                     (println "XXXX")
+                     (dispatch [:pre-organize])
+                     (.dispose iframe)
+                     ))
     (set-upload-indicator)
     (.sendFromForm iframe el "/upload")))
 
@@ -400,7 +374,6 @@
             (do
               (swap! reload-data assoc :last-page "/")
               (let [ch (chan)]
-                (println "jo")
                 (create-ws ch)
                 (go (dispatch [:init-server-ch (<! ch)]))
                 (r/render [login-page] app))))
