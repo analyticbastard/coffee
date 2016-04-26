@@ -27,7 +27,7 @@
   (go (let [location (.-location js/window)
             hostname (.-hostname location)
             port     (.-port location)
-            {:keys [ws-channel error]} (<! (ws-ch (str "wss://" hostname ":" port "/ws") {:format :transit-json}))]
+            {:keys [ws-channel error]} (<! (ws-ch (str "ws://" hostname ":" port "/ws") {:format :transit-json}))]
         (println "create" ws-channel)
         (if (or error (nil? ws-channel))
           nil                                               ; todo signal error ;(error-component error)
@@ -262,7 +262,7 @@
        [:button.btn.bth-default
         {:on-click #(dispatch [:pre-shutdown])}
         "Close coffee session"]
-       [:button.btn.bth-default
+       #_[:button.btn.bth-default
         {:on-click #(dispatch [:pre-organize])}
         "Take over session"])
      ]))
