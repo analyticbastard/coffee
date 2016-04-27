@@ -196,27 +196,21 @@
    [:button.btn.bth-default {:on-click #(secretary/dispatch! "/")}
     "Start over"]])
 
-(defn navbar-component [page-to-switch-to]
-  [:nav.navbar.navbar-default
-   [:div.container-fluid
-    (when (= page-to-switch-to "/dashboard")
-      [:div.nav.navbar-nav.navbar-left
-       [:button.navbar-btn.glyphicon.glyphicon.glyphicon-chevron-left {:on-click #(secretary/dispatch! "/dashboard")}]])
-    [:p.navbar-text
-     (str "Organized by " @(subscribe [:post-organize]))
-     ]
-    (when (= page-to-switch-to "/users")
-      [:div.nav.navbar-nav.navbar-right
-       [:button.navbar-btn.glyphicon.glyphicon-shopping-cart {:on-click #(secretary/dispatch! "/users")}]])]])
-
-(defn users-dashboard-component []
-  (let [choice (into {} @(subscribe [:post-choose]))]
-    [:div [navbar-component "/dashboard"]
-     [:ul.list-group
-      (for [user (map first choice)]
-        [:li.list-group-item user (choice user)]
-        )]]
-    )
+(defn navbar-component [dashboard-atom]
+  (let [menu?                   (= :menu @dashboard-atom)
+        selections?             (= :selections @dashboard-atom)
+        is-admin?               (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
+        admin-active-class      (if (and is-admin? (= :admin @dashboard-atom) ) "active" "")
+        menu-active-class       (if menu? "active" "")
+        selections-active-class (if selections? "active" "")
+        ]
+    (println is-admin? menu?)
+    [:ul.nav.nav-tabs
+     [:li {:class menu-active-class :on-click (fn [e] (reset! dashboard-atom :menu) nil)} [:a "Menu"]]
+     [:li {:class selections-active-class :on-click (fn [e] (reset! dashboard-atom :selections) nil)} [:a "Order breakdown"]]
+     (when is-admin?
+       [:li {:class admin-active-class :on-click (fn [e] (reset! dashboard-atom :admin) nil)} [:a "Organizer options"]])
+     ])
   )
 
 (defn get-count-for-coffee-type [all-users-choices coffee-name]
@@ -248,24 +242,47 @@
      (for [[name img] @(subscribe [:post-coffee-types])]
        [coffee-button-component name img all-users-choices])]))
 
+(defn menu-component []
+  [:div
+   [:div.panel.panel-default
+    [:div.panel-heading [:h3.panel-title "Select your coffee"]]
+    [:div.panel-body
+     [coffee-types]
+     ]]
+   (if (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
+     [:button.btn.bth-default
+      {:on-click #(dispatch [:pre-shutdown])}
+      "Close coffee session"]
+     #_[:button.btn.bth-default
+        {:on-click #(dispatch [:pre-organize])}
+        "Take over session"])])
+
+
+(defn selections-component []
+  (let [choice (into {} @(subscribe [:post-choose]))]
+    [:ul.list-group
+     (for [user (map first choice)]
+       [:li.list-group-item user (choice user)]
+       )]
+    ))
+
+(defn dashboard-page [dashboard-atom]
+  (case @dashboard-atom
+    :menu [menu-component]
+    :selections [selections-component]
+    :admin [:div "XX"]))
+
+
 (defn main-dashboard-component []
   (if (empty? @(subscribe [:post-shutdown]))
     [shutdown-component]
-    [:div
-     [navbar-component "/users"]
-     [:div.panel.panel-default
-      [:div.panel-heading [:h3.panel-title "Select your coffee"]]
-      [:div.panel-body
-       [coffee-types]
-       ]]
-     (if (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
-       [:button.btn.bth-default
-        {:on-click #(dispatch [:pre-shutdown])}
-        "Close coffee session"]
-       #_[:button.btn.bth-default
-        {:on-click #(dispatch [:pre-organize])}
-        "Take over session"])
-     ]))
+    (let [dashboard-atom (r/atom :menu)]
+      [:div
+       [navbar-component dashboard-atom]
+       [dashboard-page dashboard-atom]
+       ]
+      )
+    ))
 
 (defn organize-component []
   (let [organizer (subscribe [:post-organize])]
@@ -328,11 +345,7 @@
   (defroute dashboard "/dashboard" []
             (do
               (swap! reload-data assoc :last-page "/dashboard")
-              (r/render [main-dashboard-component] app)))
-  (defroute users "/users" []
-            (do
-              (swap! reload-data assoc :last-page "/users")
-              (r/render [users-dashboard-component] app))))
+              (r/render [main-dashboard-component] app))))
 
 #_(let [h (History.)]
     (events/listen h EventType.NAVIGATE #(secretary/dispatch! (.-token %)))
