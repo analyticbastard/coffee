@@ -23,6 +23,9 @@
 
 (defonce app (js/document.getElementById "app"))
 
+(defonce reload-data (atom {:last-page "/"
+                            :last-tab (atom :menu)}))
+
 (defn create-ws [ch]
   (go (let [location (.-location js/window)
             hostname (.-hostname location)
@@ -110,6 +113,40 @@
                       (send-datascript-tx! server-ch tx-data))
                     db))
 
+(register-handler :pre-add-section
+                  (fn [db [_ section-name]]
+                    (let [server-ch (:server-ch db)
+                          tx-data   [{:db/id -1 :section/name section-name}]]
+                      (send-datascript-tx! server-ch tx-data)
+                      )
+                    db))
+
+(register-handler :pre-delete-section
+                  (fn [db [_ section-name]]
+                    (let [server-ch (:server-ch db)
+                          tx-data   [[:db/retract [:section/name section-name] :section/name section-name]]]
+                      (send-datascript-tx! server-ch tx-data)
+                      )
+                    db))
+
+(register-handler :pre-add-menu
+                  (fn [db [_ section-name menu-name]]
+                    (let [server-ch (:server-ch db)
+                          temp-id   (d/tempid :db.part/user)
+                          tx-data   [{:db/id temp-id :coffee/name menu-name}
+                                     {:db/id [:section/name section-name] :section/items temp-id}]]
+                      (send-datascript-tx! server-ch tx-data)
+                      )
+                    db))
+
+(register-handler :pre-delete-menu
+                  (fn [db [_ menu-name]]
+                    (let [server-ch (:server-ch db)
+                          tx-data   [[:db/retract [:coffee/name menu-name] :coffee/name menu-name]]]
+                      (send-datascript-tx! server-ch tx-data)
+                      )
+                    db))
+
 (register-handler :pre-shutdown (fn [db _]
                                   (let [server-ch (:server-ch db)
                                         ]
@@ -177,6 +214,24 @@
                                    [?c :coffee/name ?coffee-name]
                                    ])))
 
+(register-sub :post-section-name
+              (fn [db _]
+                (query->reaction db
+                                 '[:find [?section-name ...]
+                                   :where
+                                   [_ :section/name ?section-name]
+                                   ])))
+
+(register-sub :post-menu-name
+              (fn [db _]
+                (query->reaction db
+                                 '[:find [?menu-name ...]
+                                   :in $
+                                   :where
+                                   [?menu :coffee/name ?menu-name]
+                                   ]
+                                 )))
+
 (register-sub :post-shutdown
               (fn [db _]
                 (query->reaction db
@@ -220,7 +275,7 @@
                         count))]
   )
 
-(defn coffee-button-component [coffee-name coffee-img all-users-choices]
+(defn coffee-button-component [coffee-name all-users-choices]
   (let [user-name         @(subscribe [:pre-login])]
     [:li.btn.btn-default {:on-click #(dispatch [:pre-choose coffee-name])
                           :class    (when (->> all-users-choices
@@ -229,9 +284,6 @@
                                                          (and (= user-name u) (= coffee-name c))))
                                                not-empty) "active")
                           }
-     [:img {:src   coffee-img
-            :style {:float "left"}
-            :width "15px"}]
      [:span coffee-name]
      [get-count-for-coffee-type all-users-choices coffee-name]
      ]))
@@ -239,23 +291,87 @@
 (defn coffee-types []
   (let [all-users-choices @(subscribe [:post-choose])]
     [:ul.btn-group-vertical
-     (for [[name img] @(subscribe [:post-coffee-types])]
-       [coffee-button-component name img all-users-choices])]))
+     (for [name @(subscribe [:post-menu-name])]
+       [coffee-button-component name all-users-choices])]))
+
+(defn item-component [menu-name]
+  [:div.panel.panel-default
+   [:div.panel-heading {:style {:overflow "hidden"}}
+    [:button.glyphicon.glyphicon-minus {:style    {:height "25px" :width "25px" :float "right"}
+                                        :on-click #(dispatch [:pre-delete-menu menu-name])}]
+    [:h2.panel-title {:style {:overflow "hidden"}} menu-name]]
+   ]
+  )
+
+(defn menu-list-component [section-name]
+  [:div
+   (let [menu-names @(subscribe [:post-menu-name])]
+     (do (println section-name ) "x")
+     (for [menu-name menu-names]
+       [item-component menu-name])
+     )])
+
+(defn new-menu-component [section-name new-menu-name]
+  [:div
+   [:div.panel.panel-default {:style {:overflow "hidden"}}
+    [:div.panel-heading [:h2.panel-title "Add new menu item"]]
+    [:button.glyphicon.glyphicon-plus {:style    {:height "40px" :width "40px" :float "right"}
+                                       :on-click #(dispatch [:pre-add-menu section-name @new-menu-name])}]
+    [:div {:style {:resize "none" :height "40px" :overflow "hidden"}}
+     [:textarea {:placeholder "Combo selection (burger name, burrito combo, etc)/side name, etc" :style {:resize "none" :height "100%" :width "100%"}
+                 :onChange    #(reset! new-menu-name (-> % .-target .-value))}]]
+    ]]
+  )
+
+(defn section-component [section-name]
+  [:div.panel.panel-default
+   [:div.panel-heading {:style {:overflow "hidden"}}
+    [:button.glyphicon.glyphicon-minus {:style    {:height "25px" :width "25px" :float "right"}
+                                        :on-click #(dispatch [:pre-delete-section section-name])}]
+    [:h2.panel-title {:style {:overflow "hidden"}} section-name]]
+   [:ul.list-group
+    [:li.list-group-item
+     (let [new-menu-name (r/atom "")]
+       [:div
+        [new-menu-component section-name new-menu-name]
+        [menu-list-component section-name]]
+       )
+     ]
+    ]])
+
+(defn section-list-component []
+  (let [section-names @(subscribe [:post-section-name])]
+    [:div
+     (for [section-name section-names]
+       [section-component section-name])
+     ]))
+
+(defn new-section-component []
+  (let [new-section-name (atom "")]
+    [:div
+     [:div.panel.panel-default {:style {:overflow "hidden"}}
+      [:div.panel-heading [:h2.panel-title "Add new course"]]
+      [:button.glyphicon.glyphicon-plus {:style    {:height "40px" :width "40px" :float "right"}
+                                         :on-click #(dispatch [:pre-add-section @new-section-name])}]
+      [:div {:style {:resize "none" :height "40px" :overflow "hidden"}}
+       [:textarea {:placeholder "Course name (Mains, Sides, etc)" :style {:resize "none" :height "100%" :width "100%"}
+                   :onChange    #(reset! new-section-name (-> % .-target .-value))}]]
+      ]]))
 
 (defn menu-component []
   [:div
    [:div.panel.panel-default
-    [:div.panel-heading [:h3.panel-title "Select your coffee"]]
+    [:div.panel-heading [:h2.panel-title "Select your meal"]]
     [:div.panel-body
      [coffee-types]
      ]]
    (if (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
      [:button.btn.bth-default
       {:on-click #(dispatch [:pre-shutdown])}
-      "Close coffee session"]
-     #_[:button.btn.bth-default
-        {:on-click #(dispatch [:pre-organize])}
-        "Take over session"])])
+      "Close session"]
+     [:button.btn.bth-default
+        {:on-click (secretary/dispatch! "/")}
+        "Log off"])])
 
 
 (defn selections-component []
@@ -266,23 +382,33 @@
        )]
     ))
 
+(defn admin-component []
+  [:div
+   [:div.panel.panel-default
+    [:div.panel-heading [:h3.panel-title "Course set up"]]
+    [:div.panel-body
+     [new-section-component]
+     [section-list-component]
+     ]]
+   ]
+  )
+
 (defn dashboard-page [dashboard-atom]
   (case @dashboard-atom
     :menu [menu-component]
     :selections [selections-component]
-    :admin [:div "XX"]))
-
+    :admin [admin-component]
+    [menu-component]))
 
 (defn main-dashboard-component []
-  (if (empty? @(subscribe [:post-shutdown]))
-    [shutdown-component]
-    (let [dashboard-atom (r/atom :menu)]
+  (let [dashboard-atom (:last-tab @reload-data)]
+    (if (empty? @(subscribe [:post-shutdown]))
+      [shutdown-component]
       [:div
        [navbar-component dashboard-atom]
        [dashboard-page dashboard-atom]
        ]
-      )
-    ))
+      )))
 
 (defn organize-component []
   (let [organizer (subscribe [:post-organize])]
@@ -290,10 +416,10 @@
       (secretary/dispatch! "/dashboard"))
     [:div.modal-dialog
      [:div.loginmodal-container
-      [:div.panel-heading [:h3.form-sign-in-heading "Organize coffee session"]]
+      [:div.panel-heading [:h3.form-sign-in-heading "Organize JFF"]]
       [:button.btn.btn-lg.btn-primary.btn-block
        {:on-click #(dispatch [:pre-organize])}
-       "Organize coffee session"]]])
+       "Organize JFF"]]])
   )
 
 
@@ -326,8 +452,6 @@
           {:type     "submit"
            :on-click login-fn}]]]])))
 
-
-(defonce reload-data (atom {:last-page "/"}))
 
 (do
   (defroute login "/" []

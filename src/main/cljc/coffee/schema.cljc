@@ -25,7 +25,16 @@
    {:db/ident              :coffee/name
     :db/unique             :db.unique/identity
     :db/cardinality        :db.cardinality/one
-    :db/doc                "User's name"
+    :db/doc                "Coffee name"
+    :db.install/_attribute :db.part/db}
+   {:db/ident              :section/name
+    :db/unique             :db.unique/identity
+    :db/cardinality        :db.cardinality/one
+    :db/doc                "Section name"
+    :db.install/_attribute :db.part/db}
+   {:db/ident              :section/items
+    :db/cardinality        :db.cardinality/many
+    :db/doc                "Section items"
     :db.install/_attribute :db.part/db}
    ]
   )
