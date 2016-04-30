@@ -380,13 +380,8 @@
     [:div.panel-body
      [coffee-types]
      ]]
-   (if (= @(subscribe [:pre-login]) @(subscribe [:post-organize]))
-     [:button.btn.bth-default
-      {:on-click #(dispatch [:pre-shutdown])}
-      "Close session"]
-     [:button.btn.bth-default
-        {:on-click (secretary/dispatch! "/")}
-        "Log off"])])
+   [:button.btn.bth-default  {:on-click #(secretary/dispatch! "/")}
+    "Log off"]])
 
 
 (defn selections-component []
@@ -405,6 +400,9 @@
      [new-section-component]
      [section-list-component]
      ]]
+   [:button.btn.bth-default
+    {:on-click #(dispatch [:pre-shutdown])}
+    "Close session"]
    ]
   )
 
