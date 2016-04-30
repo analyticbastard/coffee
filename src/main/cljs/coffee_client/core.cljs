@@ -123,8 +123,12 @@
 
 (register-handler :pre-delete-section
                   (fn [db [_ section-name]]
-                    (let [server-ch (:server-ch db)
-                          tx-data   [[:db/retract [:section/name section-name] :section/name section-name]]]
+                    (let [server-ch     (:server-ch db)
+                          section-items @(subscribe [:post-menu-name section-name])
+                          tx-data       (concat [[:db.fn/retractEntity [:section/name section-name]]]
+                                                (for [menu-name section-items]
+                                                  [:db.fn/retractEntity [:coffee/name menu-name]]))]
+                      (println tx-data)
                       (send-datascript-tx! server-ch tx-data)
                       )
                     db))
@@ -132,9 +136,8 @@
 (register-handler :pre-add-menu
                   (fn [db [_ section-name menu-name]]
                     (let [server-ch (:server-ch db)
-                          temp-id   (d/tempid :db.part/user)
-                          tx-data   [{:db/id temp-id :coffee/name menu-name}
-                                     {:db/id [:section/name section-name] :section/items temp-id}]]
+                          tx-data   [{:db/id -1 :coffee/name menu-name :coffee/section [:section/name section-name]}]
+                          ]
                       (send-datascript-tx! server-ch tx-data)
                       )
                     db))
@@ -142,7 +145,7 @@
 (register-handler :pre-delete-menu
                   (fn [db [_ menu-name]]
                     (let [server-ch (:server-ch db)
-                          tx-data   [[:db/retract [:coffee/name menu-name] :coffee/name menu-name]]]
+                          tx-data   [[:db.fn/retractEntity [:coffee/name menu-name]]]]
                       (send-datascript-tx! server-ch tx-data)
                       )
                     db))
@@ -154,20 +157,28 @@
                                   db))
 
 
-(defn datascript-query [conn query]
-  (let [db (d/db conn)]
-    (d/q query db)))
+(defn datascript-query
+  ([conn query params]
+   (let [db (d/db conn)]
+     (apply (partial d/q query db) params)))
+  ([conn query]
+   (let [db (d/db conn)]
+     (d/q query db))))
 
 (defn query->reaction
-  ([db query post-process-fn]
+  ([db query post-process-fn params]
    (when-let [conn (:conn-post @db)]
      (let [initial              (-> conn (datascript-query query) post-process-fn)
            result-atom          (atom nil)
            db-listener-callback (fn [tx-report]
-                                  (let [value (-> conn (datascript-query query) post-process-fn)]
+                                  (let [query-fn (if params #(datascript-query % query params)
+                                                            #(datascript-query % query))
+                                        value    (-> conn query-fn post-process-fn)]
                                     (reset! result-atom value)))]
        (d/listen! conn query db-listener-callback)
        (reaction (or @result-atom initial)))))
+  ([db query post-process-fn]
+   (query->reaction db query post-process-fn nil))
   ([db query]
    (query->reaction db query identity)))
 
@@ -199,10 +210,10 @@
 (register-sub :post-coffee-types
               (fn [db _]
                 (query->reaction db
-                                 '[:find ?name ?img
+                                 '[:find [?name ...]
                                    :where
-                                   [?c :coffee/name ?name]
-                                   [?c :coffee/img ?img]])))
+                                   [_ :coffee/name ?name]
+                                   ])))
 
 (register-sub :post-choose
               (fn [db _]
@@ -223,14 +234,17 @@
                                    ])))
 
 (register-sub :post-menu-name
-              (fn [db _]
+              (fn [db [_ section-name]]
                 (query->reaction db
                                  '[:find [?menu-name ...]
                                    :in $
                                    :where
                                    [?menu :coffee/name ?menu-name]
+                                   [?section :section/name ?section-name]
+                                   [?menu :coffee/section ?section ]
                                    ]
-                                 )))
+                                 identity
+                                 section-name)))
 
 (register-sub :post-shutdown
               (fn [db _]
@@ -291,7 +305,7 @@
 (defn coffee-types []
   (let [all-users-choices @(subscribe [:post-choose])]
     [:ul.btn-group-vertical
-     (for [name @(subscribe [:post-menu-name])]
+     (for [name @(subscribe [:post-coffee-types])]
        [coffee-button-component name all-users-choices])]))
 
 (defn item-component [menu-name]
@@ -305,8 +319,7 @@
 
 (defn menu-list-component [section-name]
   [:div
-   (let [menu-names @(subscribe [:post-menu-name])]
-     (do (println section-name ) "x")
+   (let [menu-names @(subscribe [:post-menu-name section-name])]
      (for [menu-name menu-names]
        [item-component menu-name])
      )])

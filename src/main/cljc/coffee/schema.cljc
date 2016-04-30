@@ -32,9 +32,10 @@
     :db/cardinality        :db.cardinality/one
     :db/doc                "Section name"
     :db.install/_attribute :db.part/db}
-   {:db/ident              :section/items
-    :db/cardinality        :db.cardinality/many
-    :db/doc                "Section items"
+   {:db/ident              :coffee/section
+    :db/cardinality        :db.cardinality/one
+    :db/valueType          :db.type/ref
+    :db/doc                "Menu section"
     :db.install/_attribute :db.part/db}
    ]
   )
