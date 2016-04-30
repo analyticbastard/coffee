@@ -329,11 +329,11 @@
 (defn new-menu-component [section-name new-menu-name]
   [:div
    [:div.panel.panel-default {:style {:overflow "hidden"}}
-    [:div.panel-heading [:h2.panel-title "Add new menu item"]]
-    [:button.glyphicon.glyphicon-plus {:style    {:height "40px" :width "40px" :float "right"}
+    [:div.panel-heading [:h3.panel-title "Add new menu item"]]
+    [:button.glyphicon.glyphicon-plus {:style    {:height "35px" :width "35px" :float "right"}
                                        :on-click #(when (not-empty @new-menu-name)
                                                    (dispatch [:pre-add-menu section-name @new-menu-name]))}]
-    [:div {:style {:resize "none" :height "40px" :overflow "hidden"}}
+    [:div {:style {:resize "none" :height "35px" :overflow "hidden"}}
      [:textarea {:placeholder "Combo selection (burger name, burrito combo, etc)/side name, etc" :style {:resize "none" :height "100%" :width "100%"}
                  :onChange    #(reset! new-menu-name (-> % .-target .-value))}]]
     ]]
