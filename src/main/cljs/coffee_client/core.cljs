@@ -306,9 +306,11 @@
 
 (defn coffee-types []
   (let [all-users-choices @(subscribe [:post-choose])]
-    [:ul.btn-group-vertical {:style {:width "100%" :overflow "hidden"}}
-     (for [name @(subscribe [:post-coffee-types])]
-       [coffee-button-component name all-users-choices])]))
+    (vec
+      (concat
+        [:ul.btn-group-vertical {:style {:width "100%" :overflow "hidden"}}]
+        (for [name @(subscribe [:post-coffee-types])]
+          [coffee-button-component name all-users-choices])))))
 
 (defn item-component [menu-name]
   [:div.panel.panel-default
@@ -320,11 +322,11 @@
   )
 
 (defn menu-list-component [section-name]
-  [:div
-   (let [menu-names @(subscribe [:post-menu-name section-name])]
-     (for [menu-name menu-names]
-       [item-component menu-name])
-     )])
+  (let [menu-names @(subscribe [:post-menu-name section-name])]
+    (vec
+      (concat [:div]
+              (map #(do [item-component %]) menu-names)
+              ))))
 
 (defn new-menu-component [section-name new-menu-name]
   [:div
@@ -356,11 +358,10 @@
     ]])
 
 (defn section-list-component []
-  (let [section-names @(subscribe [:post-section-name])]
-    [:div
-     (for [section-name section-names]
-       [section-component section-name])
-     ]))
+  (vec
+    (concat [:div]
+            (let [section-names @(subscribe [:post-section-name])]
+              (map #(do [section-component %]) section-names)))))
 
 (defn new-section-component []
   (let [new-section-name (atom "")]
