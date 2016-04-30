@@ -331,7 +331,8 @@
    [:div.panel.panel-default {:style {:overflow "hidden"}}
     [:div.panel-heading [:h2.panel-title "Add new menu item"]]
     [:button.glyphicon.glyphicon-plus {:style    {:height "40px" :width "40px" :float "right"}
-                                       :on-click #(dispatch [:pre-add-menu section-name @new-menu-name])}]
+                                       :on-click #(when (not-empty @new-menu-name)
+                                                   (dispatch [:pre-add-menu section-name @new-menu-name]))}]
     [:div {:style {:resize "none" :height "40px" :overflow "hidden"}}
      [:textarea {:placeholder "Combo selection (burger name, burrito combo, etc)/side name, etc" :style {:resize "none" :height "100%" :width "100%"}
                  :onChange    #(reset! new-menu-name (-> % .-target .-value))}]]
@@ -367,7 +368,8 @@
      [:div.panel.panel-default {:style {:overflow "hidden"}}
       [:div.panel-heading [:h2.panel-title "Add new course"]]
       [:button.glyphicon.glyphicon-plus {:style    {:height "40px" :width "40px" :float "right"}
-                                         :on-click #(dispatch [:pre-add-section @new-section-name])}]
+                                         :on-click #(when (not-empty @new-section-name)
+                                                     (dispatch [:pre-add-section @new-section-name]))}]
       [:div {:style {:resize "none" :height "40px" :overflow "hidden"}}
        [:textarea {:placeholder "Course name (Mains, Sides, etc)" :style {:resize "none" :height "100%" :width "100%"}
                    :onChange    #(reset! new-section-name (-> % .-target .-value))}]]
