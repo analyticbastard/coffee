@@ -168,12 +168,12 @@
 (defn query->reaction
   ([db query post-process-fn params]
    (when-let [conn (:conn-post @db)]
-     (let [initial              (-> conn (datascript-query query) post-process-fn)
+     (let [query-fn             (if params #(datascript-query % query params)
+                                           #(datascript-query % query))
+           initial              (-> conn query-fn post-process-fn)
            result-atom          (atom nil)
            db-listener-callback (fn [tx-report]
-                                  (let [query-fn (if params #(datascript-query % query params)
-                                                            #(datascript-query % query))
-                                        value    (-> conn query-fn post-process-fn)]
+                                  (let [value    (-> conn query-fn post-process-fn)]
                                     (reset! result-atom value)))]
        (d/listen! conn query db-listener-callback)
        (reaction (or @result-atom initial)))))
@@ -237,14 +237,14 @@
               (fn [db [_ section-name]]
                 (query->reaction db
                                  '[:find [?menu-name ...]
-                                   :in $
+                                   :in $ ?section-name
                                    :where
                                    [?menu :coffee/name ?menu-name]
                                    [?section :section/name ?section-name]
                                    [?menu :coffee/section ?section ]
                                    ]
                                  identity
-                                 section-name)))
+                                 [section-name])))
 
 (register-sub :post-shutdown
               (fn [db _]
