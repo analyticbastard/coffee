@@ -283,28 +283,30 @@
   )
 
 (defn get-count-for-coffee-type [all-users-choices coffee-name]
-  [:span (str "x " (->> all-users-choices
-                        vals
-                        (filter #(= coffee-name %))
-                        count))]
+  [:span {:style {:float "right" :height "100%" :width "100%"}}
+   (str "x " (->> all-users-choices
+                  vals
+                  (filter #(= coffee-name %))
+                  count))]
   )
 
 (defn coffee-button-component [coffee-name all-users-choices]
   (let [user-name         @(subscribe [:pre-login])]
     [:li.btn.btn-default {:on-click #(dispatch [:pre-choose coffee-name])
+                          :style    {:height "100%" :width "100%" :float "right" :overflow "hidden"}
                           :class    (when (->> all-users-choices
                                                vec
                                                (filter (fn [[u c]]
                                                          (and (= user-name u) (= coffee-name c))))
                                                not-empty) "active")
                           }
-     [:span coffee-name]
+     [:span {:style {:overflow "hidden"}} coffee-name]
      [get-count-for-coffee-type all-users-choices coffee-name]
      ]))
 
 (defn coffee-types []
   (let [all-users-choices @(subscribe [:post-choose])]
-    [:ul.btn-group-vertical
+    [:ul.btn-group-vertical {:style {:width "100%" :overflow "hidden"}}
      (for [name @(subscribe [:post-coffee-types])]
        [coffee-button-component name all-users-choices])]))
 
