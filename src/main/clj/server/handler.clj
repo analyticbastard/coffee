@@ -18,9 +18,6 @@
 (defn init-state [] (let [session-name (coffee.schema/get-session-name)
                           conn (d/create-conn (coffee.schema/create-schema))]
                       (d/transact! conn [{:db/id -1 :session/name session-name}])
-                      (doseq [coffee types/coffee-types]
-                        (let [{:keys [name img]} coffee]
-                          (d/transact! conn [{:db/id -1 :coffee/name name :coffee/img img}])))
                       {:conn conn}))
 (def app-state (atom (init-state)))
 
