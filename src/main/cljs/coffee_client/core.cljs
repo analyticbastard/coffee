@@ -416,10 +416,11 @@
 
 (defn selections-component []
   (let [choice (into {} @(subscribe [:post-choose]))]
-    [:ul.list-group
-     (for [user (map first choice)]
-       [:li.list-group-item user (choice user)]
-       )]
+    (vec
+      (concat [:ul.list-group]
+              (for [user (map first choice)]
+                [:li.list-group-item user (choice user)]
+                )))
     ))
 
 (defn admin-component []
