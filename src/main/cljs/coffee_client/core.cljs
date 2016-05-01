@@ -172,10 +172,11 @@
                                            #(datascript-query % query))
            initial              (-> conn query-fn post-process-fn)
            result-atom          (atom nil)
+           listening-key        (if params [query params] query)
            db-listener-callback (fn [tx-report]
                                   (let [value    (-> conn query-fn post-process-fn)]
                                     (reset! result-atom value)))]
-       (d/listen! conn query db-listener-callback)
+       (d/listen! conn listening-key db-listener-callback)
        (reaction (or @result-atom initial)))))
   ([db query post-process-fn]
    (query->reaction db query post-process-fn nil))
@@ -273,7 +274,6 @@
         menu-active-class       (if menu? "active" "")
         selections-active-class (if selections? "active" "")
         ]
-    (println is-admin? menu?)
     [:ul.nav.nav-tabs
      [:li {:class menu-active-class :on-click (fn [e] (reset! dashboard-atom :menu) nil)} [:a "Menu"]]
      [:li {:class selections-active-class :on-click (fn [e] (reset! dashboard-atom :selections) nil)} [:a "Order breakdown"]]
