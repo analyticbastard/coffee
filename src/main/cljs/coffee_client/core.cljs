@@ -305,13 +305,23 @@
      [:span {:style {:height "100%" :float "left" :overflow "hidden"}} coffee-name]
      ]))
 
+(defn section-selection-component [section-name all-users-choices]
+  (vec
+    (concat
+      [:div.panel.panel-default
+       [:div.panel-heading [:h3.panel-title section-name]]]
+      (for [menu-name @(subscribe [:post-menu-name section-name])]
+        [coffee-button-component menu-name all-users-choices])))
+  )
+
+
 (defn coffee-types []
   (let [all-users-choices @(subscribe [:post-choose])]
     (vec
       (concat
         [:ul.btn-group-vertical {:style {:width "100%" :overflow "hidden"}}]
-        (for [name @(subscribe [:post-coffee-types])]
-          [coffee-button-component name all-users-choices])))))
+        (for [section-name @(subscribe [:post-section-name])]
+          [section-selection-component section-name all-users-choices])))))
 
 (defn item-component [menu-name]
   [:div.panel.panel-default
@@ -397,17 +407,30 @@
     ))
 
 (defn admin-component []
-  [:div
-   [:div.panel.panel-default
-    [:div.panel-heading [:h3.panel-title "Course set up"]]
-    [:div.panel-body
-     [new-section-component]
-     [section-list-component]
-     ]]
-   [:button.btn.bth-default
-    {:on-click #(dispatch [:pre-shutdown])}
-    "Close session"]
-   ]
+  (let [edit-locked-atom (atom false)]
+    (fn []
+      [:div
+       [:div.panel.panel-default
+        [:div.panel-heading [:h3.panel-title "Course set up"]]
+        (if-not @edit-locked-atom
+          [:div.panel-body
+           [new-section-component]
+           [section-list-component]
+           ]
+          [:div.panel-body
+           [:span "Edit is locked"]])]
+       [:div
+        (if-not @edit-locked-atom
+          [:button.btn.bth-default
+           {:on-click (fn [] (reset! edit-locked-atom true))}
+           "Lock editing"]
+          [:button.btn.bth-default
+           {:on-click (fn [] (reset! edit-locked-atom false))}
+           "Unlock editing"])
+        [:button.btn.bth-default
+         {:on-click #(dispatch [:pre-shutdown])}
+         "Close session"]]
+       ]))
   )
 
 (defn dashboard-page [dashboard-atom]
