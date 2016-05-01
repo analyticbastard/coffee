@@ -9,7 +9,7 @@
     :db.install/_attribute :db.part/db}
    {:db/ident              :user/choice
     :db/valueType          :db.type/ref
-    :db/cardinality        :db.cardinality/one
+    :db/cardinality        :db.cardinality/many
     :db/doc                "User's coffee choice"
     :db.install/_attribute :db.part/db}
    {:db/ident              :session/name
@@ -36,6 +36,21 @@
     :db/cardinality        :db.cardinality/one
     :db/valueType          :db.type/ref
     :db/doc                "Menu section"
+    :db.install/_attribute :db.part/db}
+   {:db/ident              :choice/name
+    :db/unique             :db.unique/identity
+    :db/cardinality        :db.cardinality/one
+    :db/doc                "Choice lookup ref"
+    :db.install/_attribute :db.part/db}
+   {:db/ident              :choice/section
+    :db/cardinality        :db.cardinality/one
+    :db/valueType          :db.type/ref
+    :db/doc                "Choice section"
+    :db.install/_attribute :db.part/db}
+   {:db/ident              :choice/item
+    :db/cardinality        :db.cardinality/one
+    :db/valueType          :db.type/ref
+    :db/doc                "Choice item"
     :db.install/_attribute :db.part/db}
    ]
   )

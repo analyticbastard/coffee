@@ -94,23 +94,35 @@
                     db))
 
 (register-handler :pre-choose
-                  (fn [db [_ choice]]
+                  (fn [db [_ section choice]]
                     (let [user-name   (:user-name db)
                           server-ch   (:server-ch db)
                           conn-post   (:conn-post db)
                           db-post     (d/db conn-post)
-                          prev-choice (first (d/q '[:find [?coffee-name ...]
-                                                    :in $ ?user-name
+                          prev-choice (first (d/q '[:find [?choice-name ...]
+                                                    :in $ ?user-name ?section-name
                                                     :where
                                                     [?u :user/name ?user-name]
                                                     [?u :user/choice ?c]
-                                                    [?c :coffee/name ?coffee-name]
+                                                    [?c :choice/name ?choice-name]
+                                                    [?c :choice/section ?s]
+                                                    [?s :section/name ?section-name]
                                                     ]
-                                                  db-post user-name))
-                          tx-data     [(if (= prev-choice choice)
-                                         [:db/retract [:user/name user-name] :user/choice [:coffee/name choice]]
-                                         {:db/id       [:user/name user-name]
-                                          :user/choice [:coffee/name choice]})]]
+                                                  db-post user-name section))
+                          choice-tx   {:db/id -1
+                                       :choice/name choice
+                                       :choice/section [:section/name section]
+                                       :choice/item [:coffee/name choice]}
+                          add-tx      {:db/id       [:user/name user-name]
+                                       :user/choice [:choice/name choice]}
+                          remove-tx   [:db/retract [:user/name user-name] :user/choice [:choice/name prev-choice]]
+                          tx-data     (if prev-choice
+                                        (if-not (= prev-choice choice)
+                                          [remove-tx choice-tx add-tx]
+                                          [remove-tx]
+                                          )
+                                        [choice-tx add-tx])]
+                      (println "!!!!prev" section choice prev-choice)
                       (send-datascript-tx! server-ch tx-data))
                     db))
 
@@ -222,9 +234,9 @@
                 (query->reaction db
                                  '[:find ?user-name ?coffee-name
                                    :where
-                                   [?u :user/choice ?c]
                                    [?u :user/name ?user-name]
-                                   [?c :coffee/name ?coffee-name]
+                                   [?u :user/choice ?c]
+                                   [?c :choice/name ?coffee-name]
                                    ])))
 
 (register-sub :post-section-name
@@ -291,9 +303,9 @@
                   count))]
   )
 
-(defn coffee-button-component [coffee-name all-users-choices]
+(defn coffee-button-component [section-name coffee-name all-users-choices]
   (let [user-name         @(subscribe [:pre-login])]
-    [:li.btn.btn-default {:on-click #(dispatch [:pre-choose coffee-name])
+    [:li.btn.btn-default {:on-click #(dispatch [:pre-choose section-name coffee-name])
                           :style    {:height "100%" :width "100%" :overflow "hidden"}
                           :class    (when (->> all-users-choices
                                                vec
@@ -311,7 +323,7 @@
       [:div.panel.panel-default
        [:div.panel-heading [:h3.panel-title section-name]]]
       (for [menu-name @(subscribe [:post-menu-name section-name])]
-        [coffee-button-component menu-name all-users-choices])))
+        [coffee-button-component section-name menu-name all-users-choices])))
   )
 
 
