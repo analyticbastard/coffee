@@ -69,11 +69,12 @@
                   (fn [db _]
                     (let [conn-post (d/create-conn (coffee.schema/create-schema))
                           server-ch (:server-ch db)]
-                      (when server-ch
-                        (receive! server-ch conn-post)
-                        (assoc db :conn-pre (d/create-conn (coffee.schema/create-schema))
-                                  :conn-post conn-post)
-                        ))))
+                      (if server-ch
+                        (do
+                          (receive! server-ch conn-post)
+                          (assoc db :conn-pre (d/create-conn (coffee.schema/create-schema))
+                                    :conn-post conn-post))
+                        db))))
 
 (register-handler :pre-login
                   (fn [db [_ user-name]]
