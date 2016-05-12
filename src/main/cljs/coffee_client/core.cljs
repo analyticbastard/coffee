@@ -229,6 +229,27 @@
                                    [_ :coffee/name ?name]
                                    ])))
 
+(register-sub :post-user-names
+              (fn [db _]
+                (query->reaction db
+                                 '[:find [?name ...]
+                                   :where
+                                   [_ :user/name ?name]
+                                   ])))
+
+(register-sub :post-user-choices
+              (fn [db [_ user-name]]
+                (query->reaction db
+                                 '[:find [?name ...]
+                                   :in $ ?user-name
+                                   :where
+                                   [?u :user/name ?user-name]
+                                   [?u :user/choice ?c]
+                                   [?c :choice/name ?name]
+                                   ]
+                                 identity
+                                 user-name)))
+
 (register-sub :post-choose
               (fn [db _]
                 (query->reaction db
@@ -413,13 +434,22 @@
    [:button.btn.bth-default  {:on-click #(secretary/dispatch! "/")}
     "Log off"]])
 
+(defn user-selection-component [user-name]
+  (let [choice-names @(subscribe [:post-user-choices user-name])]
+    [:li.list-group-item
+     [:div
+      user-name
+      (vec
+        (concat [:div]
+                (for [choice-name choice-names]
+                  [:div choice-name])))]]))
 
 (defn selections-component []
-  (let [choice (into {} @(subscribe [:post-choose]))]
+  (let [user-names @(subscribe [:post-user-names])]
     (vec
       (concat [:ul.list-group]
-              (for [user (map first choice)]
-                [:li.list-group-item user (choice user)]
+              (for [user-name user-names]
+                [user-selection-component user-name]
                 )))
     ))
 
