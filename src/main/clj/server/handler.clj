@@ -14,12 +14,27 @@
             )
   (:import (datascript.db Datom)))
 
+(def session-file-name "session.edn")
 
-(defn init-state [] (let [session-name (coffee.schema/get-session-name)
-                          conn (d/create-conn (coffee.schema/create-schema))]
-                      (d/transact! conn [{:db/id -1 :session/name session-name}])
-                      {:conn conn}))
-(def app-state (atom (init-state)))
+(defn init-state
+  ([state]
+   (let [conn (d/create-conn (coffee.schema/create-schema))]
+     (d/transact! conn state)
+     {:conn conn}))
+  ([]
+   (let [session-name (coffee.schema/get-session-name)]
+     (init-state [{:db/id -1 :session/name session-name}]))))
+
+(defn load-init-state []
+  (print "Loading state")
+  (try
+    (-> session-file-name slurp init-state)
+    (println " from file for existing session")
+    (catch Exception e
+      (println " for new session")
+      (init-state))))
+
+(def app-state (atom (load-init-state)))
 
 (defn send! [ch msg]
   (println "send!" msg)
@@ -58,7 +73,9 @@
     (println "received" message)
     (println "processed" tx-data)
     (if tx-data
-      (send! chat-ch (mapv (comp op-eav datom->vec) tx-data))
+      (do
+        (spit session-file-name @conn)
+        (send! chat-ch (mapv (comp op-eav datom->vec) tx-data)))
       (do
         (process-command message)
         (send! chat-ch message)))
