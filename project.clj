@@ -5,13 +5,11 @@
 
   :dependencies [[org.clojure/clojure "1.7.0"]
                  [org.clojure/tools.nrepl "0.2.11"]
-                 [compojure "1.4.0"]
+                 [compojure "1.5.0"]
                  [ring/ring-defaults "0.1.5"]
-                 [environ "1.0.0"]
+                 [environ "1.0.3"]
                  [jarohen/chord "0.7.0"]
                  [org.clojure/clojurescript "1.7.170"]
-                 [org.clojure/core.async "0.2.374"
-                  :exclusions [org.clojure/tools.reader]]
                  [reagent "0.5.1"]
                  [reagent-utils "0.1.7"]
                  [re-frame "0.7.0-alpha-2"]
@@ -22,10 +20,10 @@
   :plugins [[lein-test-out "0.3.1"]
             [lein-ring "0.9.7"]
             [lein-cljsbuild "1.1.2"]
-            [environ/environ.lein "0.3.1"]
+            [lein-environ "1.0.3"]
             ]
 
-  :hooks [environ.leiningen.hooks]
+  :main server.handler
 
   :source-paths ["src/main/clj" "src/main/cljs" "src/main/cljc"]
 

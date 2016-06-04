@@ -4,8 +4,7 @@
             [environ.core :as env]
             [ring.middleware.defaults :refer [wrap-defaults site-defaults]]
             [chord.http-kit :refer [with-channel]]
-            [clojure.core.async :as async :refer [<! >! put! close! go]]
-            [clojure.core.async :as a]
+            [clojure.core.async :as a :refer [<! >! put! close! go]]
             [ring.middleware.resource :as resource]
             [org.httpkit.server :as server]
             [datascript.core :as d]
@@ -87,7 +86,7 @@
         conn (:conn @app-state)
         init-tx   (mapv (comp op-eav datom->vec) (d/datoms (d/db conn) :eavt))]
     (a/tap chat-mult tapped-ch)
-    (println (format "Opened connection from %s`."
+    (println (format "Opened connection from %s."
                      (:remote-addr req)))
     (go
       (when (not-empty init-tx)
