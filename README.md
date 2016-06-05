@@ -26,6 +26,20 @@ be started by running the main program
 
     lein with-profile web run
 
+The default port is 5000, you can specify a port number
+
+    lein with-profile web run 3000
+
+## Operating the system
+
+You can now connect to the server. In a web browser, navigate to
+
+    http://localhost:5000
+
+And a sign in screen will pop up. Enter your name. The first user to log in
+is the organizer. The organizer has an organizer menu where menu sections and
+items can be added to the system. Other users will only be able to select
+the items created by the organizer.
 
 ## Architecture
 
