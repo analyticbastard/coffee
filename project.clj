@@ -58,7 +58,7 @@
 
                                          :compiler {:main coffee-client.core
                                                     :asset-path "js/compiled/out"
-                                                    :output-to "src/main/resources/public/js/compiled/coffee-client.js"
+                                                    :output-to  "src/main/resources/public/js/compiled/coffee-client.js"
                                                     :output-dir "src/main/resources/public/js/compiled/out"
                                                     :source-map-timestamp true}}
                                         ;; This next build is an compressed minified build for

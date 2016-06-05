@@ -13,6 +13,12 @@ You will need [Leiningen][] 2.0.0 or above installed.
 
 [leiningen]: https://github.com/technomancy/leiningen
 
+## Before running
+
+You need to compile the Clojurescript source into Javascript resources
+
+    lein with-profile web cljsbuild once
+
 ## Running
 
 Ring does not support web sockets, so the internal HTTP kit web server must
